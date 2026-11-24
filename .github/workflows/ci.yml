@@ -71,7 +71,7 @@ jobs:
         shell: pwsh
         run: |
           Get-Content packaging/windows/winfsp.env | Where-Object { $_ -match '^[A-Z_]+=' } | ForEach-Object {
-            $k, $v = $_ -split '=', 2; Set-Item "env:$k" $v
+            $k, $v = $_ -split '=', 2; Set-Item "env:$($k.Trim())" $v.Trim()
           }
           Invoke-WebRequest $env:WINFSP_MSI_URL -OutFile winfsp.msi
           $sum = (Get-FileHash winfsp.msi -Algorithm SHA256).Hash.ToLower()
