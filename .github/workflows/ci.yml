@@ -82,4 +82,5 @@ jobs:
       - name: End-to-end
         env:
           ESL_E2E_MOUNT: "1"
+          CGO_ENABLED: "0" # as release builds: cgofuse loads the WinFsp DLL at runtime, no headers needed
         run: go test -tags e2e,cmount -count=1 -timeout 15m -run TestE2E -v ./internal/daemon
