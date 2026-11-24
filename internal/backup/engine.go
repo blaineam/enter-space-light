@@ -518,10 +518,14 @@ func (e *Engine) Restore(ctx context.Context, ix *Index, asOf time.Time, paths [
 // first. Cheap enough to call on every status refresh.
 func (e *Engine) LocalRuns(id string) []RunSummary {
 	var out []RunSummary
-	for _, b := range e.cached(id) {
+	written := map[string]time.Time{} // run id → when the local record was written
+	for name, b := range e.cached(id) {
 		m, err := Decode(b)
 		if err != nil {
 			continue
+		}
+		if st, err := os.Stat(filepath.Join(e.cacheDir(id), name)); err == nil {
+			written[m.RunID] = st.ModTime()
 		}
 		bd := ""
 		if m.BackupDirFs != nil {
@@ -530,7 +534,14 @@ func (e *Engine) LocalRuns(id string) []RunSummary {
 		out = append(out, RunSummary{RunID: m.RunID, StartedAt: m.StartedAt.Time, FinishedAt: m.FinishedAt.Time,
 			Outcome: m.Outcome, Coverage: m.TreeCoverage, BackupDirFs: bd, Stats: m.Stats})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].FinishedAt.After(out[j].FinishedAt) })
+	// Run records keep whole seconds (the Apple format requires it), so two
+	// runs can finish in the same second; the local write time breaks the tie.
+	sort.SliceStable(out, func(i, j int) bool {
+		if !out[i].FinishedAt.Equal(out[j].FinishedAt) {
+			return out[i].FinishedAt.After(out[j].FinishedAt)
+		}
+		return written[out[i].RunID].After(written[out[j].RunID])
+	})
 	return out
 }
 

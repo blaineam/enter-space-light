@@ -79,3 +79,31 @@ func TestFlatline(t *testing.T) {
 		t.Fatalf("one run moved data: %+v", a)
 	}
 }
+
+// Two runs finishing in the same second (the record format has whole
+// seconds) must still order newest first, or health reads the wrong run.
+func TestLocalRunsBreakSameSecondTies(t *testing.T) {
+	e := &Engine{CacheDir: t.TempDir()}
+	id := NewUUID()
+	same := time.Date(2026, 11, 24, 9, 0, 0, 0, time.UTC)
+	reason := "guard"
+	for i, o := range []Outcome{Completed, Aborted} {
+		m := &Manifest{FormatVersion: 1, RunID: NewUUID(), SyncID: id, StartedAt: T(same), FinishedAt: T(same), Outcome: o, TreeCoverage: CoverageNone}
+		if o == Aborted {
+			m.Stats.AbortReason = &reason
+		}
+		b, err := Encode(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.cachePut(id, m.RunID+ManifestExt, b)
+		if i == 0 {
+			time.Sleep(20 * time.Millisecond)
+		}
+	}
+	for k := 0; k < 20; k++ { // map iteration order varies; it must not matter
+		if runs := e.LocalRuns(id); runs[0].Outcome != Aborted {
+			t.Fatalf("newest run should be the aborted one, got %s", runs[0].Outcome)
+		}
+	}
+}
