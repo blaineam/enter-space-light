@@ -23,8 +23,13 @@ func validDoc() Settings {
 	}
 }
 
+func goodBackup() *BackupOptions {
+	return &BackupOptions{ID: "AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE", Namespace: "Backup-PC", RetentionDays: 30}
+}
+
 func TestValidateAcceptsAGoodDocument(t *testing.T) {
 	d := validDoc()
+	d.Jobs[0].Backup = goodBackup()
 	if err := d.Validate(); err != nil {
 		t.Fatalf("valid document rejected: %v", err)
 	}
@@ -49,6 +54,15 @@ func TestValidateRejects(t *testing.T) {
 		"missing job name":         func(s *Settings) { s.Jobs[0].Name = " " },
 		"missing job destination":  func(s *Settings) { s.Jobs[0].Dest = "" },
 		"missing mount identifier": func(s *Settings) { s.Mounts[1].ID = "" },
+		"bisync backup":            func(s *Settings) { s.Jobs[0].Kind = KindBisync; s.Jobs[0].Backup = goodBackup() },
+		"backup bad uuid":          func(s *Settings) { b := goodBackup(); b.ID = "nope"; s.Jobs[0].Backup = b },
+		"backup lowercase uuid": func(s *Settings) {
+			b := goodBackup()
+			b.ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+			s.Jobs[0].Backup = b
+		},
+		"backup slash namespace": func(s *Settings) { b := goodBackup(); b.Namespace = "a/b"; s.Jobs[0].Backup = b },
+		"backup to remote root":  func(s *Settings) { s.Jobs[0].Dest = "b2:"; s.Jobs[0].Backup = goodBackup() },
 	}
 	for name, mutate := range cases {
 		t.Run(name, func(t *testing.T) {

@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blaineam/enter-space-light/internal/backup"
 	"github.com/blaineam/enter-space-light/internal/desktop"
 	"github.com/blaineam/enter-space-light/internal/jobs"
 	"github.com/blaineam/enter-space-light/internal/mounts"
@@ -59,6 +60,14 @@ func (d *Daemon) routes() http.Handler {
 	api.HandleFunc("DELETE /api/jobs/{id}", d.deleteJob)
 	api.HandleFunc("POST /api/jobs/{id}/run", d.runJob)
 	api.HandleFunc("POST /api/jobs/{id}/stop", d.stopJob)
+
+	api.HandleFunc("GET /api/backup/setup", d.backupSetup)
+	api.HandleFunc("GET /api/portal/discover", d.portalDiscover)
+	api.HandleFunc("GET /api/portal/timeline", d.portalTimeline)
+	api.HandleFunc("GET /api/portal/list", d.portalList)
+	api.HandleFunc("POST /api/portal/restore", d.portalRestore)
+	api.HandleFunc("GET /api/portal/restore", d.portalRestoreStatus)
+	api.HandleFunc("POST /api/portal/restore/stop", d.portalRestoreStop)
 
 	api.HandleFunc("PUT /api/prefs", d.putPrefs)
 	api.HandleFunc("POST /api/autostart", d.setAutostart)
@@ -204,7 +213,8 @@ type mountView struct {
 
 type jobView struct {
 	settings.Job
-	State jobs.State `json:"state"`
+	State  jobs.State    `json:"state"`
+	Health *backup.Alert `json:"health,omitempty"`
 }
 
 // Status is the whole UI model in one document.
@@ -281,8 +291,9 @@ func (d *Daemon) snapshot() Status {
 		js[st.ID] = st
 	}
 	s.Jobs = []jobView{}
+	health := d.backupHealth(doc)
 	for _, j := range doc.Jobs {
-		s.Jobs = append(s.Jobs, jobView{Job: j, State: js[j.ID]})
+		s.Jobs = append(s.Jobs, jobView{Job: j, State: js[j.ID], Health: health[j.ID]})
 	}
 	s.Volumes = d.vols.Current()
 	if s.Volumes == nil {
@@ -423,6 +434,7 @@ func (d *Daemon) createJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	j.ID = settings.NewID()
+	d.fillBackup(&j, nil)
 	if !d.update(w, func(s *settings.Settings) error { s.Jobs = append(s.Jobs, j); return nil }) {
 		return
 	}
@@ -440,6 +452,7 @@ func (d *Daemon) updateJob(w http.ResponseWriter, r *http.Request) {
 	if !d.update(w, func(s *settings.Settings) error {
 		for i := range s.Jobs {
 			if s.Jobs[i].ID == id {
+				d.fillBackup(&j, &s.Jobs[i])
 				s.Jobs[i] = j
 				return nil
 			}

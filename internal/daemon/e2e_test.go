@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blaineam/enter-space-light/internal/backup"
 	"github.com/blaineam/enter-space-light/internal/client"
 	"github.com/blaineam/enter-space-light/internal/daemon"
 	"github.com/blaineam/enter-space-light/internal/paths"
@@ -249,6 +250,171 @@ func TestE2E(t *testing.T) {
 		runOK()
 		if _, err := os.Stat(filepath.Join(left, "r2.txt")); err != nil {
 			t.Fatal("second bisync didn't propagate r2.txt")
+		}
+	})
+
+	t.Run("backup and time portal", func(t *testing.T) {
+		src := filepath.Join(home, "pc")
+		write(t, filepath.Join(src, "a.txt"), "version one")
+		write(t, filepath.Join(src, "docs", "b.txt"), "beta original")
+		write(t, filepath.Join(src, ".cache", "junk.bin"), "cache")
+		write(t, filepath.Join(src, "AppData", "Local", "Temp", "junk.tmp"), "temp")
+
+		var job struct {
+			ID     string
+			Backup struct{ ID, Namespace string }
+		}
+		must(t, c.Do(http.MethodPost, "/api/jobs", map[string]any{
+			"name": "PC backup", "kind": "sync", "enabled": true, "source": src, "dest": "cloud:Backup/PC",
+			"triggers": map[string]any{"daily": "02:30"},
+			"backup":   map[string]any{"template": "home", "retentionDays": 30, "excludeGroups": []string{"temp", "system"}},
+		}, &job))
+		if !backup.ValidUUID(job.Backup.ID) || job.Backup.Namespace != "Backup-PC" {
+			t.Fatalf("backup identity not assigned: %+v", job.Backup)
+		}
+		runJob := func(wantOK bool) string {
+			t.Helper()
+			before := 0
+			for _, j := range get().Jobs {
+				if j.ID == job.ID && j.State.Last != nil {
+					before = 1
+				}
+			}
+			_ = before
+			must(t, c.Do(http.MethodPost, "/api/jobs/"+job.ID+"/run", nil, nil))
+			var last string
+			eventually(t, 90*time.Second, "backup run", func() bool {
+				for _, j := range get().Jobs {
+					if j.ID == job.ID && j.State.Running == nil && j.State.Last != nil {
+						if j.State.Last.OK != wantOK {
+							t.Fatalf("run ok=%v want %v: %s", j.State.Last.OK, wantOK, j.State.Last.Error)
+						}
+						last = j.State.Last.Error
+						return true
+					}
+				}
+				return false
+			})
+			return last
+		}
+		runJob(true)
+		dest := filepath.Join(remoteRoot, "Backup", "PC")
+		if b, _ := os.ReadFile(filepath.Join(dest, "a.txt")); string(b) != "version one" {
+			t.Fatal("first backup missing a.txt")
+		}
+		junkDirs := []string{".cache"} // Linux (and the macOS dev build) skip ~/.cache
+		if runtime.GOOS == "windows" {
+			junkDirs = []string{filepath.Join("AppData", "Local", "Temp")}
+		}
+		for _, junk := range junkDirs {
+			if _, err := os.Stat(filepath.Join(dest, junk)); !os.IsNotExist(err) {
+				t.Fatalf("exclude group ignored: %s was backed up", junk)
+			}
+		}
+		manifests, _ := filepath.Glob(filepath.Join(dest, ".enterspace", "manifests", job.Backup.ID, "*.json.deflate"))
+		if len(manifests) != 1 {
+			t.Fatalf("want 1 run record on the destination, got %v", manifests)
+		}
+		raw, _ := os.ReadFile(manifests[0])
+		m, err := backup.Decode(raw)
+		must(t, err)
+		onDisk := 0
+		_ = filepath.WalkDir(dest, func(p string, de os.DirEntry, err error) error {
+			if err == nil && !de.IsDir() && !strings.Contains(p, ".enterspace") {
+				onDisk++
+			}
+			return nil
+		})
+		if m.Outcome != backup.Completed || m.TreeCoverage != backup.CoverageFull || len(m.LiveEntries) != onDisk || onDisk < 2 || m.SyncID != job.Backup.ID {
+			t.Fatalf("run record: outcome=%s coverage=%s live=%d", m.Outcome, m.TreeCoverage, len(m.LiveEntries))
+		}
+
+		time.Sleep(1100 * time.Millisecond)
+		write(t, filepath.Join(src, "a.txt"), "version two")
+		must(t, os.RemoveAll(filepath.Join(src, "docs")))
+		time.Sleep(1100 * time.Millisecond)
+		runJob(true)
+		vers, _ := filepath.Glob(filepath.Join(remoteRoot, ".previous-versions", "Backup-PC", "*", "a.txt"))
+		if len(vers) != 1 {
+			t.Fatalf("replaced a.txt should be kept as a version: %v", vers)
+		}
+		if b, _ := os.ReadFile(vers[0]); string(b) != "version one" {
+			t.Fatalf("version content %q", b)
+		}
+
+		var tl struct {
+			Timeline []time.Time `json:"timeline"`
+		}
+		must(t, c.Do(http.MethodGet, "/api/portal/timeline?refresh=1&job="+job.ID, nil, &tl))
+		if len(tl.Timeline) != 2 {
+			t.Fatalf("timeline %v", tl.Timeline)
+		}
+		first := tl.Timeline[1].Unix()
+		var l backup.Listing
+		must(t, c.Do(http.MethodGet, fmt.Sprintf("/api/portal/list?job=%s&at=%d", job.ID, first), nil, &l))
+		states := map[string]backup.State{}
+		for _, it := range l.Items {
+			states[it.Name] = it.State
+		}
+		if states["a.txt"] != backup.ModifiedSince || states["docs"] != backup.DeletedSince {
+			t.Fatalf("point-in-time view at the first backup: %+v (note %q)", states, l.Note)
+		}
+
+		restoreTo := filepath.Join(home, "restored")
+		restore := func(body map[string]any) {
+			t.Helper()
+			must(t, c.Do(http.MethodPost, "/api/portal/restore?job="+job.ID, body, nil))
+			eventually(t, 60*time.Second, "restore", func() bool {
+				var st struct {
+					Restore *backup.RestoreReport `json:"restore"`
+				}
+				must(t, c.Do(http.MethodGet, "/api/portal/restore", nil, &st))
+				if st.Restore != nil && st.Restore.Finished && len(st.Restore.Failed) > 0 {
+					t.Fatalf("restore failures: %v", st.Restore.Failed)
+				}
+				return st.Restore != nil && st.Restore.Finished
+			})
+		}
+		restore(map[string]any{"paths": []string{"docs"}, "at": first, "target": "folder", "folder": restoreTo})
+		if b, _ := os.ReadFile(filepath.Join(restoreTo, "docs", "b.txt")); string(b) != "beta original" {
+			t.Fatalf("restored deleted file: %q", b)
+		}
+		restore(map[string]any{"paths": []string{"a.txt"}, "at": first, "target": "original", "keepBoth": true})
+		if b, _ := os.ReadFile(filepath.Join(src, "a.txt")); string(b) != "version two" {
+			t.Fatal("keep-both restore overwrote the current file")
+		}
+		kept, _ := filepath.Glob(filepath.Join(src, "a (restored *).txt"))
+		if len(kept) != 1 {
+			t.Fatalf("keep-both copy missing: %v", kept)
+		}
+		if b, _ := os.ReadFile(kept[0]); string(b) != "version one" {
+			t.Fatalf("keep-both content %q", b)
+		}
+
+		// The delete guard: an emptied source (an unplugged drive, a moved
+		// folder) must never wipe the backup.
+		entries, _ := os.ReadDir(src)
+		for _, e := range entries {
+			must(t, os.RemoveAll(filepath.Join(src, e.Name())))
+		}
+		msg := runJob(false)
+		if !strings.Contains(msg, "source is empty") {
+			t.Fatalf("guard message: %q", msg)
+		}
+		if _, err := os.Stat(filepath.Join(dest, "a.txt")); err != nil {
+			t.Fatal("the guard let the backup be deleted")
+		}
+		var health struct {
+			Jobs []struct {
+				ID     string
+				Health *backup.Alert `json:"health"`
+			} `json:"jobs"`
+		}
+		must(t, c.Do(http.MethodGet, "/api/status", nil, &health))
+		for _, j := range health.Jobs {
+			if j.ID == job.ID && (j.Health == nil || j.Health.Kind != "guardAborted") {
+				t.Fatalf("health should report the guard stop: %+v", j.Health)
+			}
 		}
 	})
 

@@ -83,6 +83,29 @@ type Job struct {
 	Triggers Triggers          `json:"triggers"`
 	Filters  []string          `json:"filters,omitempty"` // rclone filter rules: "+ /Photos/**", "- *.tmp"
 	Options  map[string]string `json:"options,omitempty"` // raw rclone option overrides
+	// Backup turns the job into a versioned backup browsable in Time Portal.
+	Backup *BackupOptions `json:"backup,omitempty"`
+}
+
+// BackupOptions make a sync or copy job keep version history and run
+// manifests in the format Enter Space uses on Apple platforms.
+type BackupOptions struct {
+	// ID is the backup's identity on the destination (an uppercase UUID,
+	// the Apple app's sync ID). Fixed at creation.
+	ID string `json:"id"`
+	// Template the wizard used: "home", "folder", "drive" or "custom".
+	Template string `json:"template,omitempty"`
+	// Namespace names the versions folder (.previous-versions/<namespace>).
+	Namespace string `json:"namespace"`
+	// RetentionDays keeps replaced and deleted files this long; 0 = forever.
+	RetentionDays int `json:"retentionDays"`
+	// ExcludeGroups are the wizard's "skip caches…" choices (backup.Groups).
+	ExcludeGroups []string `json:"excludeGroups,omitempty"`
+	// AllowLargeDeletes turns off the guard that stops a run which would
+	// delete more than a quarter of the backup (a disconnected drive…).
+	AllowLargeDeletes bool `json:"allowLargeDeletes,omitempty"`
+	// Created is when the backup was set up (for "never finished" alerts).
+	Created time.Time `json:"created,omitzero"`
 }
 
 // Prefs are global preferences.
@@ -116,6 +139,7 @@ var (
 	dailyRe  = regexp.MustCompile(`^([01]\d|2[0-3]):[0-5]\d$`)
 	letterRe = regexp.MustCompile(`^[A-Za-z]:\\?$`)
 	optKeyRe = regexp.MustCompile(`^[a-z0-9_]+$`)
+	uuidRe   = regexp.MustCompile(`^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$`)
 )
 
 // IsDriveLetter reports whether s is "X:" or "X:\".
@@ -210,6 +234,23 @@ func (s *Settings) Validate() error {
 		}
 		if err := checkOptions(j.Options); err != nil {
 			return fmt.Errorf("sync job %q: %w", j.Name, err)
+		}
+		if b := j.Backup; b != nil {
+			if j.Kind != KindSync && j.Kind != KindCopy {
+				return fmt.Errorf("backup %q must be a mirror or copy", j.Name)
+			}
+			if !uuidRe.MatchString(b.ID) {
+				return fmt.Errorf("backup %q has an invalid id", j.Name)
+			}
+			if b.Namespace == "" || strings.ContainsAny(b.Namespace, `/\:`) {
+				return fmt.Errorf("backup %q has an invalid versions folder name", j.Name)
+			}
+			if b.RetentionDays < 0 {
+				return fmt.Errorf("backup %q: retention can't be negative", j.Name)
+			}
+			if i := strings.Index(j.Dest, ":"); i > 1 && strings.Trim(j.Dest[i+1:], "/") == "" {
+				return fmt.Errorf("backup %q: choose a folder on %s, not the top of the remote (old versions are kept beside it)", j.Name, j.Dest)
+			}
 		}
 	}
 	return nil

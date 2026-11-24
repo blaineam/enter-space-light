@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blaineam/enter-space-light/internal/backup"
 	"github.com/blaineam/enter-space-light/internal/rcl"
 	"github.com/blaineam/enter-space-light/internal/settings"
 	"github.com/blaineam/enter-space-light/internal/tune"
@@ -35,6 +36,7 @@ type Live struct {
 	Attempt int        `json:"attempt"`
 	Stats   rcl.Stats  `json:"stats"`
 	Waiting *time.Time `json:"waitingUntil,omitempty"` // between retries
+	Phase   string     `json:"phase,omitempty"`        // backups: "checking" (guard), "recording" (run record)
 }
 
 // State is what the UI shows per job.
@@ -69,6 +71,7 @@ type Config struct {
 	Retry     []time.Duration // outer retries after rclone's own retries give up
 	Poll      time.Duration
 	Now       func() time.Time
+	Backup    *backup.Engine // versioning, delete guard, run records for backup jobs
 }
 
 type running struct {
@@ -169,11 +172,50 @@ func (r *Runner) Start(id, reason, volumeRoot string) error {
 	return nil
 }
 
-func (r *Runner) execute(ctx context.Context, j settings.Job, run *running, volumeRoot string) Result {
-	res := Result{Started: run.live.Started, Reason: run.live.Reason}
+func (r *Runner) execute(ctx context.Context, j settings.Job, run *running, volumeRoot string) (res Result) {
+	res = Result{Started: run.live.Started, Reason: run.live.Reason}
 	srcB := tune.BackendOf(tune.Expand(j.Source, volumeRoot), r.c.Resolve)
 	dstB := tune.BackendOf(tune.Expand(j.Dest, volumeRoot), r.c.Resolve)
 	pairKey := tune.Expand(j.Source, volumeRoot) + "|" + tune.Expand(j.Dest, volumeRoot)
+	group := "esl/" + j.ID
+
+	// Backups: version folder, filters and the delete guard come first, and
+	// every way out of this function records the run.
+	var brun *backup.Run
+	if j.Backup != nil && r.c.Backup != nil {
+		r.setPhase(run, "checking")
+		var perr error
+		brun, perr = r.c.Backup.Prepare(ctx, j, volumeRoot)
+		if perr != nil {
+			res.Error = perr.Error()
+			res.Finished = r.c.Now()
+			r.setPhase(run, "recording")
+			r.c.Backup.Finish(context.Background(), brun, backup.Aborted, perr.Error(), rcl.Stats{})
+			return res
+		}
+		r.setPhase(run, "")
+		defer func() {
+			st, _ := rcl.GroupStats(context.Background(), r.c.RC, group)
+			outcome, reason := backup.Failed, ""
+			switch {
+			case res.OK && st.Errors == 0:
+				outcome = backup.Completed
+			case res.OK:
+				outcome = backup.CompletedWithErrors
+			case isMaxDelete(res.Error):
+				outcome = backup.Aborted
+				reason = "This backup started deleting more files than expected, so it was stopped to protect them. If that's what you want, turn on “Allow large deletions” for this backup and run it again."
+				res.Error = reason
+			case res.Error == "stopped":
+				reason = "Stopped before it finished."
+			default:
+				reason = res.Error
+			}
+			r.setPhase(run, "recording")
+			r.c.Backup.Finish(context.Background(), brun, outcome, reason, st)
+			res.Finished = r.c.Now()
+		}()
+	}
 
 	for attempt := 1; ; attempt++ {
 		r.mu.Lock()
@@ -184,7 +226,12 @@ func (r *Runner) execute(ctx context.Context, j settings.Job, run *running, volu
 		r.changed()
 
 		call := tune.JobCall(j, srcB, dstB, volumeRoot, r.c.Workdir, first)
-		group := "esl/" + j.ID
+		if brun != nil {
+			for k, v := range brun.Params {
+				call.Params[k] = v
+			}
+			call.Params["_filter"] = map[string]any{"FilterRule": brun.Rules}
+		}
 		_, _ = r.c.RC.Call(context.Background(), "core/stats-reset", rcl.Params{"group": group})
 		var err error
 		id, err := rcl.StartAsync(ctx, r.c.RC, call.Method, rcl.Params(call.Params), group)
@@ -208,6 +255,7 @@ func (r *Runner) execute(ctx context.Context, j settings.Job, run *running, volu
 		res.Attempts = attempt
 		if err == nil {
 			res.OK = true
+			res.Error = ""
 			if j.Kind == settings.KindBisync {
 				r.mu.Lock()
 				if r.book.BisyncOK == nil {
@@ -233,16 +281,28 @@ func (r *Runner) execute(ctx context.Context, j settings.Job, run *running, volu
 		r.mu.Unlock()
 		r.changed()
 		r.c.Logf("sync %q attempt %d failed (%v); retrying in %s", j.Name, attempt, err, wait)
+		stopped := false
 		select {
 		case <-ctx.Done():
-			res.Error = "stopped"
-			res.Finished = r.c.Now()
-			return res
+			stopped = true
 		case <-time.After(wait):
+		}
+		if stopped {
+			res.Error = "stopped"
+			break
 		}
 	}
 	res.Finished = r.c.Now()
 	return res
+}
+
+func isMaxDelete(s string) bool { return strings.Contains(s, "max-delete") }
+
+func (r *Runner) setPhase(run *running, phase string) {
+	r.mu.Lock()
+	run.live.Phase = phase
+	r.mu.Unlock()
+	r.changed()
 }
 
 // retryable: configuration mistakes won't fix themselves; everything else
@@ -253,6 +313,7 @@ func retryable(err error) bool {
 		"didn't find section in config file", "not found in config", "unknown parameters",
 		"directory not found", "is a file not a directory", "can't sync or move files on overlapping remotes",
 		"bisync aborted", "must run --resync", "permission denied", "access is denied",
+		"max-delete",
 	} {
 		if strings.Contains(s, permanent) {
 			return false

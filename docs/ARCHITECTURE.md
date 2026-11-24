@@ -14,7 +14,35 @@ internal/desktop   open folders / app window, autostart, bookmarks, notification
 internal/tray      tray icon and menu (fyne.io/systray, pure Go on Windows and Linux)
 internal/ui/web    the settings window (vanilla JS, no build step), embedded
 internal/rclonecli the full rclone CLI as `esl rclone`, minus selfupdate
+internal/backup    versioned backups: wizard skip lists, manifests, delete guard,
+                   retention, health, point-in-time resolver (Time Portal), restore
 ```
+
+## Backups and Time Portal
+
+A backup is an ordinary sync or copy job with `backup` options. The runner hands it to `backup.Engine`:
+
+- **Before the run:**
+  - The dated versions folder becomes `--backup-dir`. It sits at the top of the remote (or inside the bucket, or at the drive root) as `.previous-versions/<namespace>/<yyyy-MM-dd_HH-mm-ss>`.
+  - `- /.enterspace/**` is always the first filter rule, so run records are never touched.
+  - The wizard's skip-list rules are added, plus our own mount points inside the source. On Linux, local sources also get `one_file_system` and `links`.
+  - The **delete guard** counts source and destination. It refuses to run when the source is empty, or when more than 25% of 100+ files would go. Otherwise it sets `max_delete`.
+- **After the run:** the engine writes a run record (a **manifest**) to `<dest>/.enterspace/manifests/<SYNC-UUID>/<RUN-UUID>.json.deflate`, and keeps a local copy for offline browsing. The record holds:
+  - this run's displaced files (a listing of the versions folder);
+  - the live tree, listed fresh when the run changed anything or the last full look is over 24 hours old, otherwise carried forward. It is capped at 400k entries or 15 minutes, past which it counts as `partial`.
+
+  Retention then removes expired version folders newest-first, but only those whose files all still exist elsewhere (`PlanRetention`).
+
+The format is byte-compatible with Enter Space for Apple platforms (`BackupManifest.swift`): raw DEFLATE JSON, ISO-8601 dates with whole seconds, uppercase UUIDs. Windows local paths are written `/C:/…` so the Apple app reads them as local. `scripts/check-apple-compat.sh` compiles the Apple app's real codec and checks both directions.
+
+`backup.Index` is a rule-for-rule port of the Apple app's `PointInTimeResolver`:
+
+- The earliest version displaced **after** T is the content at T.
+- Otherwise the live copy is, if it existed at T.
+- Otherwise the item is reported as unknown or unavailable, never dropped.
+- Partial listings never count as evidence of deletion.
+
+The index is always rebuilt from the destination's manifests. Which version folders retention removed is learned by listing them, so pruned versions show as "no longer kept" rather than failing on restore.
 
 ## Mounting
 

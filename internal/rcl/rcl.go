@@ -196,6 +196,7 @@ type Stats struct {
 	Transfers      int64   `json:"transfers"`
 	TotalTransfers int64   `json:"totalTransfers"`
 	Checks         int64   `json:"checks"`
+	Deletes        int64   `json:"deletes"`
 	Errors         int64   `json:"errors"`
 	Speed          float64 `json:"speed"`
 	ETA            *int64  `json:"eta,omitempty"`

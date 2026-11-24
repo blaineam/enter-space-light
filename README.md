@@ -6,7 +6,7 @@
 
 Enter Space Light mounts any [rclone](https://rclone.org) remote (Google Drive, OneDrive, Dropbox, S3, Backblaze B2, SFTP, SMB, WebDAV and about 70 more) as a normal drive. On Windows it is a drive letter in File Explorer, like a mapped network drive. On Linux it is a folder. Every application, shell and script can use it.
 
-It also runs **scheduled syncs**: every few hours, daily at a set time, at sign-in, or **whenever a particular USB drive is plugged in**.
+It also runs **backups and syncs**: every few hours, daily at a set time, at sign-in, or **whenever a particular USB drive is plugged in**. Backups keep earlier versions of changed and deleted files, and **Time Portal** lets you browse a backup as it was at any earlier moment and bring files back.
 
 It starts at sign-in, reconnects drives on its own, retries failed uploads and syncs, and tunes rclone for each provider so you don't have to. There is a tray icon and a small settings window. Everything else happens in the file manager you already use.
 
@@ -35,6 +35,27 @@ Then start **Enter Space Light** from your app menu.
 3. Optionally **add a sync**: for example, copy `Pictures` to B2 every night, or mirror a cloud folder to a USB stick whenever it's plugged in.
 
 Start-at-sign-in is turned on the first time you run it. You can turn it off in Settings.
+
+## Backups and Time Portal
+
+**Set up a backup** walks you through five steps:
+
+1. **What:** your whole user folder (recommended), chosen folders, or a whole drive.
+2. **Where:** a cloud remote (encrypted ones are listed first), a USB drive, or a folder or network share.
+3. **What to skip:** temporary files and caches, browser caches, system files, folders that OneDrive, Dropbox or iCloud already keep online, and optionally developer and game folders.
+4. **When and for how long:** the schedule (daily, several times a day, or when the drive is plugged in) and how long to keep old versions.
+5. **Review.** It can then set up a second copy somewhere else (one at home, one in the cloud).
+
+How it protects you:
+
+- **Old versions are kept.** A file that is changed or deleted is moved into a dated folder under `.previous-versions` next to the backup, instead of being lost.
+- **Retention never removes the last copy.** Expired versions are cleaned up, but never the only remaining copy of a deleted file.
+- **A delete guard.** If the source is suddenly empty, or a run would delete more than a quarter of the backup (an unplugged drive, a moved folder), the run stops before deleting anything and tells you.
+- **A health check.** You're warned when a backup has never finished, keeps failing, has missed its schedule, or has copied nothing for weeks.
+
+**Time Portal** shows a backup as it was at any earlier backup. Each item is marked **Deleted since**, **Changed since** or **Unchanged**. Select files or folders and put them back where they were (a newer copy is kept beside the restored one), or restore them into a separate folder.
+
+**Works with Enter Space on Apple devices.** Every run writes a small record to the backup (`.enterspace/manifests`) in the same format Enter Space uses on Mac, iPhone and iPad. A backup made by a Mac can be browsed and restored here (**Open another backup…**). The format is shared, so the Apple apps can read these records too, though opening a Windows or Linux backup there needs a matching option in those apps.
 
 ## What "tuned automatically" means
 

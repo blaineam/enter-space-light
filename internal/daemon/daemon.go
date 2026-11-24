@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/blaineam/enter-space-light/internal/backup"
 	"github.com/blaineam/enter-space-light/internal/desktop"
 	"github.com/blaineam/enter-space-light/internal/jobs"
 	"github.com/blaineam/enter-space-light/internal/lock"
@@ -60,6 +61,8 @@ type Daemon struct {
 	runner *jobs.Runner
 	sched  *jobs.Scheduler
 	vols   *volumes.Watcher
+	engine *backup.Engine
+	portal portal
 	rc     rcl.Caller
 	hub    *hub
 
@@ -160,8 +163,10 @@ func Run(o Options) error {
 		CacheDir: paths.CacheDir(), Resolve: rcl.Backend, Locked: rcl.ConfigLocked,
 		Logf: logf, OnChange: d.hub.notify,
 	})
+	d.portal = portal{indexes: map[string]portalIndex{}, alerted: map[string]string{}}
+	d.engine = d.newEngine()
 	d.runner = jobs.New(jobs.Config{
-		RC: d.rc, Store: store, Resolve: rcl.Backend, BookPath: paths.HistoryFile(),
+		RC: d.rc, Store: store, Resolve: rcl.Backend, BookPath: paths.HistoryFile(), Backup: d.engine,
 		Workdir: paths.BisyncDir(), Logf: logf, OnChange: d.hub.notify, Locked: rcl.ConfigLocked,
 		OnFailure: func(j settings.Job, msg string) {
 			d.failures.Add(1)
@@ -363,6 +368,11 @@ func (d *Daemon) trayModel() tray.Model {
 			item.Failed = true
 		}
 		m.Jobs = append(m.Jobs, item)
+	}
+	for _, a := range d.backupHealth(doc) {
+		if a != nil && a.Critical {
+			trouble++
+		}
 	}
 	failed := d.failures.Load()
 	m.Alert = trouble > 0 || failed > 0 || m.Locked || (runtime.GOOS == "windows" && !winfsp.Installed())

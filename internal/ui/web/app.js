@@ -17,7 +17,7 @@ function h(tag, attrs, ...kids) {
     else if (k === 'checked') el.checked = !!v;
     else el.setAttribute(k, v === true ? '' : v);
   }
-  for (const kid of kids.flat()) {
+  for (const kid of kids.flat(Infinity)) {
     if (kid === null || kid === undefined || kid === false) continue;
     el.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
   }
@@ -25,7 +25,7 @@ function h(tag, attrs, ...kids) {
 }
 const $ = (id) => document.getElementById(id);
 // replaceChildren() would print null/false as text; drop them like h() does.
-function fill(el, ...kids) { el.replaceChildren(...kids.flat().filter((k) => k !== null && k !== undefined && k !== false)); }
+function fill(el, ...kids) { el.replaceChildren(...kids.flat(Infinity).filter((k) => k !== null && k !== undefined && k !== false)); }
 
 // ---------- API ----------
 async function api(method, path, body) {
@@ -93,6 +93,7 @@ async function refresh() {
   document.body.classList.toggle('os-linux', S.os === 'linux');
   renderBanners();
   if (!editing) { renderDrives(); renderSyncs(); renderRemotes(); renderSettings(); }
+  if ($('portal').classList.contains('on')) renderRestoreStatus();
 }
 
 function renderBanners() {
@@ -188,7 +189,8 @@ function triggerText(t) {
 function renderSyncs() {
   const list = $('sync-list'); fill(list);
   if (!S.jobs.length) {
-    list.append(h('div', { class: 'empty' }, h('strong', {}, 'No syncs yet'), 'Back up a folder to the cloud nightly, or copy files to a USB drive whenever it is plugged in.'));
+    list.append(h('div', { class: 'empty' }, h('strong', {}, 'Nothing set up yet'), 'Back up your files to the cloud every night, or to a USB drive whenever it is plugged in.',
+      h('div', { class: 'row', style: null }, h('button', { class: 'primary', onclick: () => backupWizard() }, 'Set up a backup'))));
     return;
   }
   for (const j of S.jobs) {
@@ -199,16 +201,23 @@ function renderSyncs() {
     list.append(h('div', { class: 'item' },
       h('span', { class: 'dot ' + dot }),
       h('div', {},
-        h('div', { class: 'title' }, j.name, h('span', { class: 'badge' }, KIND[j.kind] || j.kind), j.enabled ? null : h('span', { class: 'badge' }, 'paused')),
+        h('div', { class: 'title' }, j.name,
+          j.backup ? h('span', { class: 'badge' }, 'Backup') : h('span', { class: 'badge' }, KIND[j.kind] || j.kind),
+          j.enabled ? null : h('span', { class: 'badge' }, 'paused')),
         h('div', { class: 'sub' }, j.source, '  →  ', j.dest),
-        h('div', { class: 'sub' }, 'Runs ' + triggerText(j.triggers)),
-        jobStatusLine(j)),
+        h('div', { class: 'sub' }, 'Runs ' + triggerText(j.triggers) + (j.backup ? ' · ' + historyText(j.backup.retentionDays) : '')),
+        st.running && st.running.phase ? h('div', { class: 'sub' }, st.running.phase === 'checking' ? 'Checking it is safe to run…' : 'Recording this backup for Time Portal…') : null,
+        jobStatusLine(j),
+        j.health ? h('div', { class: 'health ' + (j.health.critical ? 'critical' : 'warning') }, '⚠ ' + j.health.message) : null),
       h('div', { class: 'actions' },
         running ? h('button', { onclick: () => act(() => api('POST', `/api/jobs/${j.id}/stop`), 'Stopping') }, 'Stop')
           : h('button', { onclick: () => act(() => api('POST', `/api/jobs/${j.id}/run`), 'Started'), title: needsDrive ? 'The drive must be connected' : '' }, 'Run now'),
+        j.backup ? h('button', { class: 'link', onclick: () => { portalState.sel = 'job:' + j.id; showTab('portal'); } }, 'Time Portal') : null,
         h('button', { class: 'link', onclick: () => syncDialog(j) }, 'Edit'))));
   }
 }
+
+function historyText(days) { return days ? `keeps old versions ${days} days` : 'keeps old versions forever'; }
 
 function renderRemotes() {
   $('conf-path').textContent = 'Stored in ' + S.config.path + (S.config.encrypted ? ' (encrypted)' : '') + '. The same file the rclone command line uses.';
@@ -636,6 +645,9 @@ $('refresh-log').addEventListener('click', loadLog);
 $('open-log').addEventListener('click', () => act(() => api('POST', '/api/open-log')));
 $('add-drive').addEventListener('click', () => driveDialog(null));
 $('add-sync').addEventListener('click', () => syncDialog(null));
+$('add-backup').addEventListener('click', () => backupWizard());
+$('portal-other').addEventListener('click', () => portalOther());
+$('portal-pick').addEventListener('change', (e) => { portalState.sel = e.target.value; portalLoad(); });
 $('add-remote').addEventListener('click', () => remoteDialog());
 $('edit-conf').addEventListener('click', () => confDialog());
 
@@ -644,6 +656,7 @@ function showTab(name) {
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('on', b.dataset.tab === name);
   for (const s of document.querySelectorAll('.tab')) s.classList.toggle('on', s.id === name);
   if (name === 'log') loadLog();
+  if (name === 'portal') portalOpen();
   try { localStorage.setItem('esl-tab', name); } catch { /* storage may be unavailable */ }
 }
 for (const b of document.querySelectorAll('#tabs button')) b.addEventListener('click', () => showTab(b.dataset.tab));
@@ -658,3 +671,357 @@ function listen() {
 }
 refresh().then(listen);
 setInterval(() => { if (S && (S.jobs.some((j) => j.state && j.state.running) || S.mounts.some((m) => m.state && m.state.nextRetry))) refresh(); }, 5000);
+
+
+// =====================================================================
+// Backup wizard
+// =====================================================================
+async function backupWizard() {
+  let setup;
+  try { setup = await api('GET', '/api/backup/setup'); } catch (e) { toast(e.message, true); return; }
+  if (!setup.remotes.length && !setup.volumes.some((v) => !v.system)) {
+    toast('Add a remote (or plug in a USB drive) to back up to first', true);
+    return;
+  }
+  const win = setup.os === 'windows';
+  const sep = win ? '\\' : '/';
+  const computer = (setup.computer || 'Computer').replace(/[\\/:*?"<>|]/g, '-');
+  const w = {
+    what: 'home', folders: new Set(setup.folders), extra: '', drive: '',
+    where: setup.remotes.length ? 'remote' : 'usb',
+    remote: (setup.remotes.find((r) => r.type === 'crypt') || setup.remotes[0] || {}).name || '',
+    remotePath: 'Backup/' + computer, usb: '', usbPath: 'Backup/' + computer, folder: '',
+    groups: new Set(setup.groups.filter((g) => g.defaultOn).map((g) => g.id)),
+    when: 'daily', daily: '02:30', every: '6h', onStart: false, mode: 'sync', days: 30,
+    name: '', runNow: true, second: false,
+  };
+  const STEPS = ['What', 'Where', 'Skip', 'When', 'Review'];
+  let step = 0, secondFor = null;
+
+  const radio = (name, value, cur, title, sub, rec, onpick) => {
+    const i = h('input', { type: 'radio', name, value, checked: cur === value });
+    i.addEventListener('change', () => { onpick(value); render(); });
+    return h('label', { class: 'choice' }, i, h('span', {}, h('b', {}, title, rec ? h('span', { class: 'rec' }, 'Recommended') : null), sub ? h('small', {}, sub) : null));
+  };
+  const stepsBar = () => h('div', { class: 'steps' }, STEPS.map((s, i) => h('span', { class: i === step ? 'on' : '' }, `${i + 1}. ${s}`)));
+  const vols = () => setup.volumes.filter((v) => !v.system);
+
+  function sourceSpec() {
+    if (w.what === 'drive') {
+      const v = setup.volumes.find((x) => x.id === w.drive);
+      if (v && v.removable) return { source: '{volume}', volume: { id: v.id, label: v.label }, filters: [], label: v.label, template: 'drive' };
+      return { source: v ? v.root : '', filters: [], label: v ? v.label : 'Drive', template: 'drive' };
+    }
+    if (w.what === 'folders') {
+      const picked = [...w.folders];
+      if (w.extra.trim()) picked.push(w.extra.trim());
+      const underHome = picked.filter((f) => f.startsWith(setup.home + sep));
+      if (picked.length === 1 && !underHome.length) return { source: picked[0], filters: [], label: picked[0].split(/[\\/]/).pop(), template: 'folder' };
+      if (underHome.length !== picked.length) return { error: 'Folders outside your user folder need their own backup — pick one at a time.' };
+      if (!picked.length) return { error: 'Choose at least one folder.' };
+      return { source: setup.home, template: 'folder', label: 'Folders',
+        filters: picked.map((f) => '+ /' + f.slice(setup.home.length + 1).replace(/\\/g, '/') + '/**').concat(['- **']) };
+    }
+    return { source: setup.home, filters: [], label: 'Home', template: 'home' };
+  }
+
+  function destSpec() {
+    if (w.where === 'usb') {
+      const v = setup.volumes.find((x) => x.id === w.usb);
+      return { dest: '{volume}/' + w.usbPath.replace(/^[\\/]+/, ''), volume: v ? { id: v.id, label: v.label } : null, label: v ? v.label : 'USB drive' };
+    }
+    if (w.where === 'folder') return { dest: w.folder.trim(), label: w.folder.trim() };
+    return { dest: w.remote + ':' + w.remotePath.replace(/^\/+/, ''), label: w.remote };
+  }
+
+  function validate() {
+    if (step === 0) {
+      if (w.what === 'drive' && !w.drive) return 'Choose a drive.';
+      const s = sourceSpec(); if (s.error) return s.error;
+    }
+    if (step === 1) {
+      if (w.where === 'remote' && (!w.remote || !w.remotePath.trim())) return 'Choose a remote and a folder on it.';
+      if (w.where === 'usb' && !w.usb) return 'Plug in the drive and choose it.';
+      if (w.where === 'folder' && !w.folder.trim()) return 'Enter a folder.';
+      const s = sourceSpec(), d = destSpec();
+      if (w.what === 'drive' && w.where === 'usb' && w.drive === w.usb) return 'A drive can’t be backed up onto itself.';
+      if (s.volume && w.where === 'usb') return 'Back up a USB drive to the cloud or a folder, not to another USB drive.';
+      if (s.source && d.dest && d.dest.startsWith(s.source + sep)) return 'The backup can’t go inside the folder being backed up.';
+    }
+    return '';
+  }
+
+  function render() {
+    let body = [];
+    if (step === 0) {
+      body = [h('p', { class: 'help' }, secondFor ? 'Second copy of “' + secondFor + '”.' : 'What should be protected?'),
+        h('div', { class: 'choices' },
+          radio('what', 'home', w.what, 'Everything in my user folder', setup.home + ' — documents, pictures, settings and more. Caches and system files are skipped.', true, (v) => { w.what = v; }),
+          radio('what', 'folders', w.what, 'Only some folders', 'Choose Documents, Pictures, or any folder.', false, (v) => { w.what = v; }),
+          vols().length ? radio('what', 'drive', w.what, 'A whole drive', 'Back up another drive, such as an external disk.', false, (v) => { w.what = v; }) : null)];
+      if (w.what === 'folders') {
+        body.push(h('div', { class: 'sub-choices' }, setup.folders.map((f) => {
+          const c = h('input', { type: 'checkbox', checked: w.folders.has(f) });
+          c.addEventListener('change', () => { c.checked ? w.folders.add(f) : w.folders.delete(f); });
+          return h('label', { class: 'check' }, c, f.split(/[\\/]/).pop());
+        }), field('Another folder', (() => { const i = h('input', { value: w.extra, placeholder: win ? 'D:\\Projects' : '/srv/projects' }); i.addEventListener('input', () => { w.extra = i.value; }); return i; })())));
+      }
+      if (w.what === 'drive') {
+        body.push(h('div', { class: 'sub-choices' }, vols().map((v) => radio('drive', v.id, w.drive, `${v.label} (${v.root})`, v.removable ? 'Removable' : 'Fixed disk', false, (x) => { w.drive = x; }))));
+      }
+    } else if (step === 1) {
+      const remoteSel = h('select', {}, setup.remotes.slice().sort((a, b) => (b.type === 'crypt') - (a.type === 'crypt')).map((r) => h('option', { value: r.name }, r.name + (r.type === 'crypt' ? ' — encrypted (recommended)' : ` (${r.type})`))));
+      remoteSel.value = w.remote; remoteSel.addEventListener('change', () => { w.remote = remoteSel.value; });
+      const rp = h('input', { value: w.remotePath }); rp.addEventListener('input', () => { w.remotePath = rp.value; });
+      const usbSel = h('select', {}, h('option', { value: '' }, 'Choose a drive…'), vols().filter((v) => v.id !== w.drive).map((v) => h('option', { value: v.id }, `${v.label} (${v.root})`)));
+      usbSel.value = w.usb; usbSel.addEventListener('change', () => { w.usb = usbSel.value; });
+      const up = h('input', { value: w.usbPath }); up.addEventListener('input', () => { w.usbPath = up.value; });
+      const fp = h('input', { value: w.folder, placeholder: win ? '\\\\nas\\backups\\' + computer : '/mnt/nas/backups/' + computer }); fp.addEventListener('input', () => { w.folder = fp.value; });
+      body = [h('p', { class: 'help' }, 'Where should the backup go? Keep at least one copy away from this computer.'),
+        h('div', { class: 'choices' },
+          setup.remotes.length ? radio('where', 'remote', w.where, 'A cloud remote', 'Runs on a schedule. Pick an encrypted (crypt) remote if you have one.', true, (v) => { w.where = v; }) : null,
+          vols().length ? radio('where', 'usb', w.where, 'A USB drive', 'Runs every time this drive is plugged in.', false, (v) => { w.where = v; }) : null,
+          radio('where', 'folder', w.where, 'A folder or network share', 'Another disk or a NAS share on this computer.', false, (v) => { w.where = v; }))];
+      if (w.where === 'remote') body.push(h('div', { class: 'sub-choices' }, field('Remote', remoteSel), field('Folder on the remote', rp, 'Old versions are kept in .previous-versions next to it.')));
+      if (w.where === 'usb') body.push(h('div', { class: 'sub-choices' }, field('Drive', usbSel, vols().length ? null : 'Plug the drive in to see it.'), field('Folder on the drive', up)));
+      if (w.where === 'folder') body.push(h('div', { class: 'sub-choices' }, field('Folder', fp)));
+    } else if (step === 2) {
+      body = [h('p', { class: 'help' }, w.what === 'drive' ? 'These apply inside the drive, too.' : 'Skip things that don’t need backing up. They come back on their own or live elsewhere.'),
+        h('div', { class: 'choices' }, setup.groups.map((g) => {
+          const c = h('input', { type: 'checkbox', checked: w.groups.has(g.id) });
+          c.addEventListener('change', () => { c.checked ? w.groups.add(g.id) : w.groups.delete(g.id); });
+          return h('label', { class: 'choice' }, c, h('span', {}, h('b', {}, 'Skip ' + g.title.charAt(0).toLowerCase() + g.title.slice(1), g.recommended ? h('span', { class: 'rec' }, 'Recommended') : null), h('small', {}, g.why)));
+        }))];
+    } else if (step === 3) {
+      const usb = w.where === 'usb';
+      const t = h('input', { type: 'time', value: w.daily }); t.addEventListener('input', () => { w.daily = t.value; });
+      const ev = h('select', {}, [['1h', 'Every hour'], ['3h', 'Every 3 hours'], ['6h', 'Every 6 hours'], ['12h', 'Every 12 hours']].map(([v, l]) => h('option', { value: v }, l))); ev.value = w.every; ev.addEventListener('change', () => { w.every = ev.value; });
+      const os = h('input', { type: 'checkbox', checked: w.onStart }); os.addEventListener('change', () => { w.onStart = os.checked; });
+      const days = h('select', {}, [[7, '1 week'], [30, '30 days'], [90, '90 days'], [365, '1 year'], [0, 'Forever']].map(([v, l]) => h('option', { value: v }, l))); days.value = String(w.days); days.addEventListener('change', () => { w.days = +days.value; });
+      body = [usb || sourceSpec().volume ? h('p', { class: 'help' }, 'This backup runs each time the drive is plugged in.') :
+        h('div', {}, h('p', { class: 'help' }, 'When should it run? A run the computer slept through happens as soon as it wakes.'),
+          h('div', { class: 'choices' },
+            radio('when', 'daily', w.when, 'Every day', null, true, (v) => { w.when = v; }),
+            radio('when', 'every', w.when, 'Several times a day', null, false, (v) => { w.when = v; })),
+          w.when === 'daily' ? h('div', { class: 'sub-choices' }, field('At', t)) : h('div', { class: 'sub-choices' }, ev),
+          h('label', { class: 'check' }, os, 'Also run shortly after I sign in')),
+        h('p', { class: 'help' }, 'When a file is deleted from this computer:'),
+        h('div', { class: 'choices' },
+          radio('mode', 'sync', w.mode, 'Remove it from the backup too, but keep it in Time Portal', 'The backup stays the same size as your files; deleted and old versions are kept for the time below.', true, (v) => { w.mode = v; }),
+          radio('mode', 'copy', w.mode, 'Keep it in the backup', 'Nothing is ever removed from the backup. It grows over time.', false, (v) => { w.mode = v; })),
+        field('Keep old versions for', days)];
+    } else {
+      const s = sourceSpec(), d = destSpec();
+      if (!w.name) w.name = (secondFor ? secondFor + ' (second copy)' : (s.label === 'Home' ? computer : s.label) + ' to ' + d.label);
+      const nm = h('input', { value: w.name }); nm.addEventListener('input', () => { w.name = nm.value; });
+      const rn = h('input', { type: 'checkbox', checked: w.runNow }); rn.addEventListener('change', () => { w.runNow = rn.checked; });
+      const sc = h('input', { type: 'checkbox', checked: w.second }); sc.addEventListener('change', () => { w.second = sc.checked; });
+      body = [field('Name', nm),
+        h('dl', { class: 'review' },
+          h('dt', {}, 'Backs up'), h('dd', {}, (s.volume ? 'The drive “' + s.volume.label + '” whenever it is plugged in' : s.source) + (s.filters.length ? ' (' + s.filters.filter((f) => f.startsWith('+')).length + ' folders)' : '')),
+          h('dt', {}, 'To'), h('dd', {}, d.dest.replace('{volume}', (d.volume ? d.volume.label : 'drive') + ':')),
+          h('dt', {}, 'When'), h('dd', {}, w.where === 'usb' || s.volume ? 'When the drive is plugged in' : (w.when === 'daily' ? 'Daily at ' + w.daily : 'Every ' + w.every) + (w.onStart ? ', and after sign-in' : '')),
+          h('dt', {}, 'History'), h('dd', {}, historyText(w.days)),
+          h('dt', {}, 'Skips'), h('dd', {}, setup.groups.filter((g) => w.groups.has(g.id)).map((g) => g.title.toLowerCase()).join(', ') || 'nothing')),
+        h('label', { class: 'check' }, rn, 'Start the first backup now'),
+        secondFor ? null : h('label', { class: 'check' }, sc, 'Then set up a second copy somewhere else (recommended: one copy at home, one in the cloud)')];
+    }
+    const back = step ? h('button', { type: 'button', onclick: () => { step--; render(); } }, 'Back') : null;
+    const next = step < 4 ? h('button', { class: 'primary', type: 'button', onclick: () => { const e = validate(); if (e) { toast(e, true); return; } step++; render(); } }, 'Continue')
+      : h('button', { class: 'primary', type: 'submit' }, 'Create backup');
+    const { form, err: errBox } = openDialog(secondFor ? 'Second copy' : 'Set up a backup', [stepsBar(), ...body], [back, next]);
+    errBox.textContent = '';
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const s = sourceSpec(), d = destSpec();
+      const triggers = {};
+      if (w.where === 'usb') triggers.onVolume = d.volume;
+      else if (s.volume) triggers.onVolume = s.volume;
+      else {
+        if (w.when === 'daily') triggers.daily = w.daily; else triggers.every = w.every;
+        if (w.onStart) triggers.onStart = true;
+      }
+      const job = { name: w.name.trim(), kind: w.mode, enabled: true, source: s.source, dest: d.dest, triggers, filters: s.filters,
+        backup: { template: s.template, retentionDays: w.days, excludeGroups: [...w.groups] } };
+      try {
+        const made = await api('POST', '/api/jobs', job);
+        if (w.runNow) { try { await api('POST', `/api/jobs/${made.id}/run`); } catch (x) { toast(x.message, true); } }
+        toast(w.runNow ? 'Backup created and started' : 'Backup created');
+        if (w.second && !secondFor) {
+          secondFor = made.name; step = 1; w.name = ''; w.second = false;
+          w.where = w.where === 'remote' && vols().length ? 'usb' : (setup.remotes.length ? 'remote' : 'folder');
+          render(); return;
+        }
+        closeDialog();
+        showTab('syncs');
+      } catch (x) { errBox.textContent = x.message; }
+    };
+  }
+  render();
+}
+
+// =====================================================================
+// Time Portal
+// =====================================================================
+const portalState = { sel: '', path: '', at: null, timeline: [], runs: [], selected: new Set(), listing: null, foreign: [] };
+const STATE_TEXT = { deletedSince: 'Deleted since', modifiedSince: 'Changed since', unchangedSince: 'Unchanged', prunedUnavailable: 'No longer kept', unknown: 'Unknown' };
+
+function portalQuery() {
+  const sel = portalState.sel;
+  if (sel.startsWith('job:')) return 'job=' + encodeURIComponent(sel.slice(4));
+  const [, fs, id] = sel.split('|');
+  return 'fs=' + encodeURIComponent(fs) + '&id=' + encodeURIComponent(id);
+}
+
+function portalOpen() {
+  const pick = $('portal-pick');
+  const own = S.jobs.filter((j) => j.backup);
+  fill(pick, own.map((j) => h('option', { value: 'job:' + j.id }, j.name)),
+    portalState.foreign.map((r) => h('option', { value: 'ext|' + r.destFs + '|' + r.id }, `${r.name} (on ${r.destFs})`)));
+  if (!portalState.sel && pick.options.length) portalState.sel = pick.options[0].value;
+  pick.value = portalState.sel;
+  pick.classList.toggle('hidden', !pick.options.length);
+  if (!portalState.sel) {
+    fill($('portal-body'), h('div', { class: 'empty' }, h('strong', {}, 'No backups yet'),
+      'Set up a backup and its history appears here. You can also open a backup made by Enter Space on another computer or a Mac.',
+      h('div', { class: 'row' }, h('button', { class: 'primary', onclick: () => backupWizard() }, 'Set up a backup'))));
+    return;
+  }
+  portalLoad();
+}
+
+async function portalLoad(refresh) {
+  const body = $('portal-body');
+  fill(body, h('p', { class: 'sub' }, 'Reading backup history…'));
+  try {
+    const t = await api('GET', '/api/portal/timeline?' + portalQuery() + (refresh ? '&refresh=1' : ''));
+    portalState.timeline = t.timeline.map((x) => new Date(x));
+    portalState.runs = t.runs;
+    portalState.offline = t.offline;
+    if (!portalState.at || !portalState.timeline.some((d) => +d === +portalState.at)) portalState.at = portalState.timeline[0];
+    portalState.path = ''; portalState.selected.clear();
+    await portalList();
+  } catch (e) { fill(body, h('div', { class: 'empty' }, h('strong', {}, 'Can’t open this backup'), e.message)); }
+}
+
+async function portalList() {
+  const body = $('portal-body');
+  if (!portalState.timeline.length) { fill(body, h('div', { class: 'empty' }, h('strong', {}, 'No finished backups yet'), 'Once the first backup completes you can browse it here.')); return; }
+  let l;
+  try { l = await api('GET', `/api/portal/list?${portalQuery()}&at=${Math.floor(+portalState.at / 1000)}&path=${encodeURIComponent(portalState.path)}`); }
+  catch (e) { toast(e.message, true); return; }
+  portalState.listing = l;
+  renderPortal();
+}
+
+function renderPortal() {
+  const l = portalState.listing; const tl = portalState.timeline;
+  const idx = tl.findIndex((d) => +d === +portalState.at);
+  const slider = h('input', { type: 'range', min: 0, max: Math.max(0, tl.length - 1), value: tl.length - 1 - idx, 'aria-label': 'Point in time' });
+  slider.addEventListener('change', () => { portalState.at = tl[tl.length - 1 - (+slider.value)]; portalState.selected.clear(); portalList(); });
+  const step = (d) => { const i = Math.min(tl.length - 1, Math.max(0, idx + d)); portalState.at = tl[i]; portalState.selected.clear(); portalList(); };
+  const timebar = h('div', { class: 'timebar card' },
+    h('button', { type: 'button', disabled: idx >= tl.length - 1, onclick: () => step(1), title: 'Earlier backup' }, '◀'),
+    slider,
+    h('button', { type: 'button', disabled: idx <= 0, onclick: () => step(-1), title: 'Later backup' }, '▶'),
+    h('span', { class: 'when' }, portalState.at.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })),
+    h('button', { type: 'button', class: 'link', onclick: () => portalLoad(true) }, 'Refresh'));
+
+  const parts = l.path ? l.path.split('/') : [];
+  const crumbs = h('div', { class: 'crumbs' }, h('button', { onclick: () => { portalState.path = ''; portalState.selected.clear(); portalList(); } }, 'Top'),
+    parts.map((p, i) => [' / ', h('button', { onclick: () => { portalState.path = parts.slice(0, i + 1).join('/'); portalState.selected.clear(); portalList(); } }, p)]));
+
+  const all = h('input', { type: 'checkbox', 'aria-label': 'Select all' });
+  all.addEventListener('change', () => { for (const it of l.items) all.checked ? portalState.selected.add(it.path) : portalState.selected.delete(it.path); renderPortal(); });
+  all.checked = l.items.length > 0 && l.items.every((it) => portalState.selected.has(it.path));
+  const rows = l.items.map((it) => {
+    const c = h('input', { type: 'checkbox', checked: portalState.selected.has(it.path), disabled: it.state === 'prunedUnavailable' && !it.isDir });
+    c.addEventListener('change', () => { c.checked ? portalState.selected.add(it.path) : portalState.selected.delete(it.path); renderActionbar(); });
+    const name = it.isDir ? h('button', { onclick: () => { portalState.path = it.path; portalState.selected.clear(); portalList(); } }, '📁 ' + it.name) : h('span', {}, it.name);
+    return h('tr', {}, h('td', {}, c), h('td', { class: 'name' }, name),
+      h('td', {}, h('span', { class: 'pill ' + it.state, title: it.confidence === 'uncertain' ? 'Best guess: this period of history is incomplete' : '' }, STATE_TEXT[it.state] + (it.confidence === 'uncertain' ? ' ?' : ''))),
+      h('td', { class: 'num hide-sm' }, it.isDir ? '' : bytes(it.size)),
+      h('td', { class: 'num hide-sm' }, it.isDir ? '' : new Date(it.modTime).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })));
+  });
+  const table = l.items.length ? h('table', { class: 'files' }, h('thead', {}, h('tr', {}, h('th', {}, all), h('th', {}, 'Name'), h('th', {}, 'Since then'), h('th', { class: 'hide-sm' }, 'Size'), h('th', { class: 'hide-sm' }, 'Modified'))), h('tbody', {}, rows))
+    : h('div', { class: 'empty' }, 'Nothing here at this moment.');
+  fill($('portal-body'), timebar,
+    portalState.offline ? h('div', { class: 'banner info' }, 'The backup can’t be reached right now; showing what this computer remembers. Restoring needs the backup to be reachable.') : null,
+    l.note ? h('div', { class: 'banner warn' }, l.note) : null,
+    crumbs, table, h('div', { class: 'actionbar', id: 'portal-actions' }), h('div', { id: 'restore-status' }));
+  renderActionbar();
+  renderRestoreStatus();
+}
+
+function renderActionbar() {
+  const bar = $('portal-actions'); if (!bar) return;
+  const n = portalState.selected.size;
+  fill(bar, h('span', { class: 'sub' }, n ? `${n} selected` : 'Select files or folders to bring back'),
+    h('button', { class: 'primary', disabled: !n, onclick: () => restoreDialog() }, 'Restore…'));
+}
+
+function restoreDialog() {
+  const own = portalState.sel.startsWith('job:');
+  const when = portalState.at.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+  let target = own ? 'original' : 'folder';
+  const folder = h('input', { value: defaultRestoreFolder() });
+  const render = () => {
+    const { form } = openDialog(`Restore ${portalState.selected.size} item(s) as of ${when}`, [
+      h('div', { class: 'choices' },
+        own ? (() => { const i = h('input', { type: 'radio', name: 't', checked: target === 'original' }); i.addEventListener('change', () => { target = 'original'; render(); });
+          return h('label', { class: 'choice' }, i, h('span', {}, h('b', {}, 'Put them back where they were'), h('small', {}, 'Deleted files come back. If a newer version is there now, it is kept and the old one is added beside it as “name (restored …)”.'))); })() : null,
+        (() => { const i = h('input', { type: 'radio', name: 't', checked: target === 'folder' }); i.addEventListener('change', () => { target = 'folder'; render(); });
+          return h('label', { class: 'choice' }, i, h('span', {}, h('b', {}, 'Into a separate folder'), h('small', {}, 'Nothing existing is touched.'))); })()),
+      target === 'folder' ? field('Folder', folder, '~ means your user folder.') : null,
+    ], [h('button', { class: 'primary', type: 'submit' }, 'Restore')]);
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      try {
+        await api('POST', '/api/portal/restore?' + portalQuery(), { paths: [...portalState.selected], at: Math.floor(+portalState.at / 1000), target, folder: folder.value.trim(), keepBoth: true });
+        closeDialog(); toast('Restoring…'); portalState.selected.clear(); renderPortal();
+      } catch (x) { toast(x.message, true); }
+    };
+  };
+  render();
+}
+
+function defaultRestoreFolder() {
+  const d = portalState.at, p = (n) => String(n).padStart(2, '0');
+  const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}.${p(d.getMinutes())}`;
+  return (S.os === 'windows' ? '~\\' : '~/') + 'Restored from backup ' + stamp;
+}
+
+async function renderRestoreStatus() {
+  const box = $('restore-status'); if (!box) return;
+  let st; try { st = (await api('GET', '/api/portal/restore')).restore; } catch { return; }
+  if (!st) { fill(box); return; }
+  const failed = Object.keys(st.failed || {}).length, renamed = Object.keys(st.renamed || {}).length, unavailable = (st.unavailable || []).length;
+  fill(box, h('div', { class: 'card' },
+    h('h2', {}, st.finished ? 'Restore finished' : 'Restoring…'),
+    h('p', { class: 'sub' }, `${st.done} of ${st.total} files · ${bytes(st.bytes)} into ${st.target}`),
+    st.finished ? null : h('div', { class: 'progress' }, (() => { const i = h('i'); i.style.width = (st.total ? Math.round(100 * st.done / st.total) : 0) + '%'; return i; })()),
+    renamed ? h('p', { class: 'sub' }, `${renamed} kept beside a newer copy as “(restored …)”.`) : null,
+    unavailable ? h('p', { class: 'warn' }, `${unavailable} file(s) can’t be recovered: their old versions are no longer kept.`) : null,
+    failed ? h('p', { class: 'err' }, `${failed} failed: ` + Object.entries(st.failed).slice(0, 3).map(([p, e]) => `${p} (${e})`).join('; ')) : null,
+    st.finished ? null : h('button', { onclick: () => act(() => api('POST', '/api/portal/restore/stop')) }, 'Stop')));
+}
+
+async function portalOther() {
+  const sel = h('select', {}, S.config.remotes.map((r) => h('option', { value: r.name + ':' }, r.name)), h('option', { value: '' }, 'A local folder…'));
+  const path = h('input', { placeholder: 'Backup/Home', value: 'Backup' });
+  const results = h('div', { class: 'choices' });
+  const look = h('button', { type: 'button', onclick: async () => {
+    const fs = sel.value ? sel.value + path.value.replace(/^\/+/, '') : path.value.trim();
+    fill(results, h('p', { class: 'sub' }, 'Looking…'));
+    try {
+      const refs = await api('GET', '/api/portal/discover?fs=' + encodeURIComponent(fs));
+      if (!refs.length) { fill(results, h('p', { class: 'sub' }, 'No Enter Space backups found there. Point at the backup folder itself (the one that contains .enterspace).')); return; }
+      fill(results, refs.map((r) => h('button', { type: 'button', onclick: () => {
+        if (!portalState.foreign.some((x) => x.id === r.id && x.destFs === r.destFs)) portalState.foreign.push(r);
+        portalState.sel = 'ext|' + r.destFs + '|' + r.id; closeDialog(); portalOpen();
+      } }, `${r.name || r.id} — ${r.runs} backups, last ${new Date(r.lastRun).toLocaleDateString()}`)));
+    } catch (e) { fill(results, h('p', { class: 'error' }, e.message)); }
+  } }, 'Look for backups');
+  openDialog('Open another backup', [h('p', { class: 'help' }, 'Open a backup made by another computer, or by Enter Space on a Mac, iPhone or iPad. Choose where it is stored.'),
+    field('Stored on', sel), field('Folder', path, 'The backup folder (the one containing .enterspace).'), look, results], []);
+}

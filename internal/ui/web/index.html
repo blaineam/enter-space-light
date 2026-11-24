@@ -13,7 +13,8 @@
   <div class="brand"><img src="icon.png" alt="" width="28" height="28"><span>Enter Space Light</span></div>
   <nav id="tabs" aria-label="Sections">
     <button data-tab="drives" class="on">Drives</button>
-    <button data-tab="syncs">Syncs</button>
+    <button data-tab="syncs">Syncs &amp; Backups</button>
+    <button data-tab="portal">Time Portal</button>
     <button data-tab="remotes">Remotes</button>
     <button data-tab="settings">Settings</button>
     <button data-tab="log">Log</button>
@@ -27,9 +28,14 @@
     <div id="drive-list" class="list"></div>
   </section>
   <section id="syncs" class="tab">
-    <div class="head"><h1>Syncs</h1><button class="primary" id="add-sync">Add sync</button></div>
-    <p class="lede">Copy or mirror folders on a schedule, at login, or when a particular USB drive is plugged in. Failed runs retry on their own.</p>
+    <div class="head"><h1>Syncs &amp; Backups</h1><div class="row"><button id="add-sync">Add sync</button><button class="primary" id="add-backup">Set up a backup</button></div></div>
+    <p class="lede">Backups keep earlier versions of changed and deleted files so you can go back in time. Syncs copy or mirror folders. Both run on a schedule, at sign-in, or when a particular USB drive is plugged in, and retry on their own.</p>
     <div id="sync-list" class="list"></div>
+  </section>
+  <section id="portal" class="tab">
+    <div class="head"><h1>Time Portal</h1><div class="row"><select id="portal-pick" aria-label="Backup"></select><button id="portal-other">Open another backup…</button></div></div>
+    <p class="lede">Browse a backup as it was at any earlier moment and bring back files, including ones that were deleted. Backups made by Enter Space on a Mac, iPhone or iPad open here too.</p>
+    <div id="portal-body"></div>
   </section>
   <section id="remotes" class="tab">
     <div class="head"><h1>Remotes</h1><div class="row"><button id="edit-conf">Edit rclone.conf</button><button class="primary" id="add-remote">Add remote</button></div></div>
