@@ -56,9 +56,10 @@ jobs:
       - name: Fetch pinned WinFsp (checksum-verified)
         shell: pwsh
         run: |
-          Get-Content packaging/windows/winfsp.env | Where-Object { $_ -match '^[A-Z_]+=' } | ForEach-Object {
+          Get-Content packaging/windows/winfsp.env | Where-Object { $_ -match '^[A-Z0-9_]+=' } | ForEach-Object {
             $k, $v = $_ -split '=', 2; Set-Item "env:$($k.Trim())" $v.Trim()
           }
+          if (-not $env:WINFSP_MSI_URL -or -not $env:WINFSP_MSI_SHA256) { throw "winfsp.env was not read" }
           Invoke-WebRequest $env:WINFSP_MSI_URL -OutFile packaging/windows/winfsp.msi
           $sum = (Get-FileHash packaging/windows/winfsp.msi -Algorithm SHA256).Hash.ToLower()
           if ($sum -ne $env:WINFSP_MSI_SHA256) { throw "WinFsp checksum mismatch: $sum" }
