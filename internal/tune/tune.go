@@ -229,6 +229,11 @@ func volLabel(name string) string {
 	return out
 }
 
+// AppStateRule keeps `.enterspace/` folders (backup run records, app
+// caches) out of every sync. The same rule as Enter Space for Apple
+// platforms (ScheduledSync.appStateRule).
+const AppStateRule = "- .enterspace/**"
+
 // SyncCall is a ready-to-run rc call for a job.
 type SyncCall struct {
 	Method string
@@ -282,16 +287,17 @@ func JobCall(j settings.Job, srcBackend, dstBackend, volumeRoot, bisyncWorkdir s
 		p[k] = v
 	}
 
-	var rules []string
+	// Enter Space's own state (backup run records, app caches) never travels
+	// and is never deleted, whatever the job's rules say: first rule, and
+	// unanchored so rclone matches it at any depth including the root.
+	rules := []string{AppStateRule}
 	for _, f := range j.Filters {
 		f = strings.TrimSpace(f)
 		if f != "" && !strings.HasPrefix(f, "#") {
 			rules = append(rules, f)
 		}
 	}
-	if len(rules) > 0 {
-		p["_filter"] = map[string]any{"FilterRule": rules}
-	}
+	p["_filter"] = map[string]any{"FilterRule": rules}
 
 	switch j.Kind {
 	case settings.KindBisync:

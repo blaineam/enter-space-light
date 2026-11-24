@@ -339,6 +339,13 @@ func TestE2E(t *testing.T) {
 		must(t, os.RemoveAll(filepath.Join(src, "docs")))
 		time.Sleep(1100 * time.Millisecond)
 		runJob(true)
+		records := func() int {
+			n, _ := filepath.Glob(filepath.Join(dest, ".enterspace", "manifests", job.Backup.ID, "*.json.deflate"))
+			return len(n)
+		}
+		if got := records(); got != 2 {
+			t.Fatalf("the second run must not delete the first run's record from the destination: %d records", got)
+		}
 		vers, _ := filepath.Glob(filepath.Join(remoteRoot, ".previous-versions", "Backup-PC", "*", "a.txt"))
 		if len(vers) != 1 {
 			t.Fatalf("replaced a.txt should be kept as a version: %v", vers)
@@ -394,6 +401,28 @@ func TestE2E(t *testing.T) {
 		}
 		if b, _ := os.ReadFile(kept[0]); string(b) != "version one" {
 			t.Fatalf("keep-both content %q", b)
+		}
+
+		// delete_excluded makes rclone delete excluded destination files, our
+		// records included (it has no protect rule); the run must put them back.
+		var doc struct {
+			Jobs []map[string]any `json:"jobs"`
+		}
+		must(t, c.Do(http.MethodGet, "/api/status", nil, &doc))
+		for _, j := range doc.Jobs {
+			if j["id"] != job.ID {
+				continue
+			}
+			delete(j, "state")
+			delete(j, "health")
+			j["options"] = map[string]string{"delete_excluded": "true"}
+			must(t, c.Do(http.MethodPut, "/api/jobs/"+job.ID, j, nil))
+		}
+		time.Sleep(1100 * time.Millisecond)
+		write(t, filepath.Join(src, "c.txt"), "third")
+		runJob(true)
+		if got := records(); got != 3 {
+			t.Fatalf("with delete_excluded, the run must recover the records rclone displaced: %d of 3", got)
 		}
 
 		// The delete guard: an emptied source (an unplugged drive, a moved

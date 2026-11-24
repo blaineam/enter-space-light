@@ -15,6 +15,7 @@ First version, for Windows (x64, Arm) and Linux (x86_64, arm64).
   - Health alerts cover backups that never finished, keep failing, missed their schedule, or have copied nothing for weeks.
   - Windows and Linux skip lists cover caches, temp files, system files, browser caches, other cloud apps' folders, and optional developer and game folders. Mounted drives inside a backed-up folder are never followed.
 - Time Portal: browse any backup as it was at any earlier run, with deleted, changed and unchanged files marked, and restore files or folders to where they were (keeping newer copies) or into another folder.
+- Every sync and backup keeps `.enterspace/` folders (backup run records, app caches) out of the transfer, as the first rule, so a mirror never deletes a backup's own records. With `delete_excluded` set, records rclone moves aside are copied back after the run.
 - Backup run records use the same on-disk format as Enter Space for Apple platforms, so a backup made by a Mac, iPhone or iPad opens in Time Portal here. Compatibility is checked in both directions against the Apple app's own code.
 
 - Mount any rclone remote as a Windows drive letter (WinFsp, network-drive mode) or a Linux folder (FUSE 3), usable from every app and shell.

@@ -107,7 +107,7 @@ func (e *Engine) Prepare(ctx context.Context, j settings.Job, volumeRoot string)
 
 	// Our manifests must never be touched by the sync, whatever the user's
 	// own rules say, so this rule comes first.
-	r.Rules = []string{"- /.enterspace/**"}
+	r.Rules = []string{tune.AppStateRule}
 	for _, f := range j.Filters {
 		if f = strings.TrimSpace(f); f != "" && !strings.HasPrefix(f, "#") {
 			r.Rules = append(r.Rules, f)
@@ -186,6 +186,9 @@ func (e *Engine) Finish(ctx context.Context, r *Run, outcome Outcome, reason str
 	if err := writeFile(ctx, dir, r.RunID+ManifestExt, data); err != nil {
 		e.logf("backup %q: saving the run record to the destination failed (kept locally): %v", r.Job.Name, err)
 	}
+	if outcome != Aborted {
+		e.recoverDisplaced(ctx, r)
+	}
 	if (outcome == Completed || outcome == CompletedWithErrors) && b.RetentionDays > 0 {
 		var live map[string]bool
 		if m.TreeCoverage == CoverageFull {
@@ -195,6 +198,43 @@ func (e *Engine) Finish(ctx context.Context, r *Run, outcome Outcome, reason str
 			}
 		}
 		e.retain(ctx, r, live)
+	}
+}
+
+// recoverDisplaced puts back run records that this run moved into its
+// versions folder. The own-state rule keeps rclone off them, except with
+// delete_excluded, which deletes excluded destination files regardless
+// (rclone has no protect rule). Copies, never moves.
+func (e *Engine) recoverDisplaced(ctx context.Context, r *Run) {
+	rel := ManifestDir + "/" + r.Job.Backup.ID
+	from := e.join(r.BackupDirFs, rel)
+	names, err := listFileNames(ctx, from)
+	if err != nil || len(names) == 0 {
+		return
+	}
+	to := e.join(r.DestFs, rel)
+	have, _ := listFileNames(ctx, to)
+	present := map[string]bool{}
+	for _, n := range have {
+		present[n] = true
+	}
+	n := 0
+	for _, name := range names {
+		if present[name] || !strings.HasSuffix(name, ManifestExt) {
+			continue
+		}
+		data, err := readFile(ctx, from, name)
+		if err == nil {
+			err = writeFile(ctx, to, name, data)
+		}
+		if err != nil {
+			e.logf("backup %q: recovering run record %s: %v", r.Job.Name, name, err)
+			continue
+		}
+		n++
+	}
+	if n > 0 {
+		e.logf("backup %q: recovered %d run record(s) a run had moved into its versions folder", r.Job.Name, n)
 	}
 }
 

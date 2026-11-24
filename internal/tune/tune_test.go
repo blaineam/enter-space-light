@@ -72,8 +72,12 @@ func TestFilterBlockUsesRealFieldName(t *testing.T) {
 	o.FilterRule = []string{"- x"}
 	c := JobCall(settings.Job{Kind: settings.KindCopy, Source: "a:", Dest: "b:", Filters: []string{"# note", " ", "+ /keep/**", "- **"}}, "", "", "", "", false)
 	got := c.Params["_filter"].(map[string]any)["FilterRule"].([]string)
-	if len(got) != 2 || got[0] != "+ /keep/**" || got[1] != "- **" {
-		t.Fatalf("comments/blanks should be dropped, order kept: %v", got)
+	if len(got) != 3 || got[0] != AppStateRule || got[1] != "+ /keep/**" || got[2] != "- **" {
+		t.Fatalf("own-state rule first, then the job's rules in order, comments/blanks dropped: %v", got)
+	}
+	bare := JobCall(settings.Job{Kind: settings.KindCopy, Source: "a:", Dest: "b:"}, "", "", "", "", false)
+	if r := bare.Params["_filter"].(map[string]any)["FilterRule"].([]string); len(r) != 1 || r[0] != AppStateRule {
+		t.Fatalf("a job without rules still protects .enterspace: %v", r)
 	}
 }
 

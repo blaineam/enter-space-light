@@ -24,7 +24,7 @@ A backup is an ordinary sync or copy job with `backup` options. The runner hands
 
 - **Before the run:**
   - The dated versions folder becomes `--backup-dir`. It sits at the top of the remote (or inside the bucket, or at the drive root) as `.previous-versions/<namespace>/<yyyy-MM-dd_HH-mm-ss>`.
-  - `- /.enterspace/**` is always the first filter rule, so run records are never touched.
+  - `- .enterspace/**` (unanchored, any depth) is the first filter rule of every job, backup or not, so run records and app caches are never touched. `delete_excluded` still deletes excluded files (rclone has no protect rule), so after each run any records displaced into the versions folder are copied back.
   - The wizard's skip-list rules are added, plus our own mount points inside the source. On Linux, local sources also get `one_file_system` and `links`.
   - The **delete guard** counts source and destination. It refuses to run when the source is empty, or when more than 25% of 100+ files would go. Otherwise it sets `max_delete`.
 - **After the run:** the engine writes a run record (a **manifest**) to `<dest>/.enterspace/manifests/<SYNC-UUID>/<RUN-UUID>.json.deflate`, and keeps a local copy for offline browsing. The record holds:
