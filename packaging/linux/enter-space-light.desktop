@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Enter Space Light
+GenericName=Cloud Drives
+Comment=Mount cloud storage as folders and keep folders in sync
+Exec=esl open
+Icon=enter-space-light
+Terminal=false
+Categories=Network;FileTransfer;Utility;
+Keywords=rclone;cloud;mount;sync;backup;drive;
+StartupWMClass=EnterSpaceLight

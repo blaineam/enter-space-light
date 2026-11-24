@@ -1,0 +1,52 @@
+# .deb and .rpm packages. Built by .github/workflows/release.yml:
+#   VERSION=1.2.3 ARCH=amd64 BIN=dist/.../esl nfpm package -f packaging/linux/nfpm.yaml -p deb
+name: enter-space-light
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+section: net
+priority: optional
+maintainer: Blaine Miller <blaineam@users.noreply.github.com>
+description: |
+  Mount rclone remotes (Google Drive, OneDrive, S3, SFTP, SMB and 70+ more)
+  as ordinary folders, and run scheduled, at-login and on-USB-connect syncs.
+  A tray icon and a small settings window; everything else is your normal
+  file manager and shell.
+vendor: Blaine Miller
+homepage: https://github.com/blaineam/enter-space-light
+license: GPL-3.0-only
+depends:
+  - fuse3
+recommends:
+  - libnotify-bin
+overrides:
+  rpm:
+    depends:
+      - fuse3
+    recommends:
+      - libnotify
+contents:
+  - src: ${BIN}
+    dst: /usr/bin/esl
+    file_info:
+      mode: 0755
+  - src: packaging/linux/enter-space-light.desktop
+    dst: /usr/share/applications/enter-space-light.desktop
+  - src: assets/icon-512.png
+    dst: /usr/share/icons/hicolor/512x512/apps/enter-space-light.png
+  - src: assets/icon-256.png
+    dst: /usr/share/icons/hicolor/256x256/apps/enter-space-light.png
+  - src: assets/icon-128.png
+    dst: /usr/share/icons/hicolor/128x128/apps/enter-space-light.png
+  - src: assets/icon-64.png
+    dst: /usr/share/icons/hicolor/64x64/apps/enter-space-light.png
+  - src: assets/icon-48.png
+    dst: /usr/share/icons/hicolor/48x48/apps/enter-space-light.png
+  - src: assets/icon-32.png
+    dst: /usr/share/icons/hicolor/32x32/apps/enter-space-light.png
+  - src: assets/icon-16.png
+    dst: /usr/share/icons/hicolor/16x16/apps/enter-space-light.png
+  - src: LICENSE
+    dst: /usr/share/doc/enter-space-light/copyright
+  - src: NOTICE
+    dst: /usr/share/doc/enter-space-light/NOTICE

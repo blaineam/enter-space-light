@@ -1,0 +1,110 @@
+name: Release
+
+# Push a tag like v0.1.0 to build installers and packages and publish a
+# GitHub release with checksums.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Linux packages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.1.0
+        with:
+          go-version-file: go.mod
+      - name: Build
+        run: OUT=dist ./scripts/build.sh "${GITHUB_REF_NAME}" linux/amd64 linux/arm64
+      - name: Packages and tarballs
+        run: |
+          set -euo pipefail
+          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0
+          V="${GITHUB_REF_NAME#v}"
+          mkdir -p out
+          for arch in amd64 arm64; do
+            dir="dist/esl-$V-linux-$arch"
+            for fmt in deb rpm; do
+              VERSION="$V" ARCH="$arch" BIN="$dir/esl" nfpm package -f packaging/linux/nfpm.yaml -p "$fmt" -t out/
+            done
+            mkdir -p "$dir/icons"
+            cp assets/icon-*.png "$dir/icons/"
+            cp packaging/linux/install.sh packaging/linux/enter-space-light.desktop LICENSE NOTICE README.md "$dir/"
+            tar -C dist -czf "out/EnterSpaceLight-$V-linux-$arch.tar.gz" "esl-$V-linux-$arch"
+          done
+          ls -l out
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: linux
+          path: out/*
+
+  windows:
+    name: Windows installers
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.1.0
+        with:
+          go-version-file: go.mod
+      - name: Build
+        shell: bash
+        run: OUT=dist ./scripts/build.sh "${GITHUB_REF_NAME}" windows/amd64 windows/arm64
+      - name: Fetch pinned WinFsp (checksum-verified)
+        shell: pwsh
+        run: |
+          Get-Content packaging/windows/winfsp.env | Where-Object { $_ -match '^[A-Z_]+=' } | ForEach-Object {
+            $k, $v = $_ -split '=', 2; Set-Item "env:$k" $v
+          }
+          Invoke-WebRequest $env:WINFSP_MSI_URL -OutFile packaging/windows/winfsp.msi
+          $sum = (Get-FileHash packaging/windows/winfsp.msi -Algorithm SHA256).Hash.ToLower()
+          if ($sum -ne $env:WINFSP_MSI_SHA256) { throw "WinFsp checksum mismatch: $sum" }
+      - name: Installers and zips
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $v = $env:GITHUB_REF_NAME.TrimStart('v')
+          $iscc = (Get-Command iscc.exe -ErrorAction SilentlyContinue).Source
+          if (-not $iscc) { $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          New-Item -ItemType Directory -Force out | Out-Null
+          foreach ($arch in 'amd64','arm64') {
+            $src = (Resolve-Path "dist/esl-$v-windows-$arch").Path
+            & $iscc "/DAppVersion=$v" "/DArch=$arch" "/DSrc=$src" "/DWinFspMsi=$((Resolve-Path packaging/windows/winfsp.msi).Path)" "/O$((Resolve-Path out).Path)" packaging/windows/esl.iss
+            if ($LASTEXITCODE -ne 0) { throw "iscc failed for $arch" }
+            Copy-Item LICENSE, NOTICE, README.md $src
+            Compress-Archive -Path "$src\*" -DestinationPath "out/EnterSpaceLight-$v-windows-$arch-portable.zip"
+          }
+          Get-ChildItem out
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: windows
+          path: out/*
+
+  publish:
+    name: Publish release
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          path: out
+          merge-multiple: true
+      - name: Checksums and release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd out
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+          cd ..
+          # Release notes: this version's section of CHANGELOG.md.
+          awk -v v="${GITHUB_REF_NAME#v}" '$0 ~ "^## \\[?"v"\\]?" {p=1; next} p && /^## / {exit} p' CHANGELOG.md > notes.md
+          gh release create "$GITHUB_REF_NAME" out/* --title "Enter Space Light ${GITHUB_REF_NAME#v}" --notes-file notes.md

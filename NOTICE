@@ -1,0 +1,47 @@
+Enter Space Light
+Copyright (C) 2026 Blaine Miller
+
+This program is free software: you can redistribute it and/or modify it
+under the terms of the GNU General Public License as published by the Free
+Software Foundation, version 3. It is distributed WITHOUT ANY WARRANTY; see
+the LICENSE file for details.
+
+"Enter Space" and the Enter Space icon are trademarks of Blaine Miller and
+are not covered by the GPL. See TRADEMARKS.md.
+
+------------------------------------------------------------------------
+Third-party software
+------------------------------------------------------------------------
+
+WinFsp - Windows File System Proxy, Copyright (C) Bill Zissimopoulos
+https://github.com/winfsp/winfsp
+  Windows drives use WinFsp, under the FLOSS exception to its GPLv3
+  license. The Windows installer includes the unmodified official WinFsp
+  installer.
+
+rclone - Copyright (C) 2012 by Nick Craig-Wood and the rclone authors
+https://rclone.org - MIT License
+  Embedded as a library; it does all storage access, mounting and syncing.
+  rclone in turn includes many libraries under their own licenses; see
+  https://github.com/rclone/rclone for details.
+
+cgofuse - Copyright (C) Bill Zissimopoulos - MIT License
+https://github.com/winfsp/cgofuse
+
+systray (fyne.io/systray) - Apache License 2.0
+https://github.com/fyne-io/systray
+
+go-keyring - Copyright (c) 2016 Zalando SE - MIT License
+https://github.com/zalando/go-keyring
+
+wincred - Copyright (c) 2014 Daniel Joos - MIT License
+https://github.com/danieljoos/wincred
+
+godbus - Copyright (c) 2013, Georg Reinke and contributors - BSD 2-Clause
+https://github.com/godbus/dbus
+
+flock - Copyright (c) 2015-2020 Tim Heckman - BSD 3-Clause
+https://github.com/gofrs/flock
+
+Go standard library and golang.org/x/sys - Copyright The Go Authors - BSD 3-Clause
+https://go.dev

@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, unit tests, cross-compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.1.0
+        with:
+          go-version-file: go.mod
+      - name: gofmt
+        run: test -z "$(gofmt -l . | tee /dev/stderr)"
+      - name: UI script parses
+        run: node --check internal/ui/web/app.js
+      - name: rclone command list is current
+        run: ./scripts/gen-rclonecli.sh && git diff --exit-code internal/rclonecli
+      - name: Unit tests (race)
+        run: go test -race -count=1 ./...
+      - name: Vet every target
+        run: |
+          set -e
+          for t in linux/amd64 linux/arm64 windows/amd64 windows/arm64; do
+            os="${t%/*}"; arch="${t#*/}"; tags=""
+            [ "$os" = windows ] && tags="-tags cmount"
+            echo "== $t"
+            CGO_ENABLED=0 GOOS=$os GOARCH=$arch go vet $tags ./...
+          done
+      - name: Cross-compile release targets
+        run: OUT=dist ./scripts/build.sh ci
+
+  e2e-linux:
+    name: End-to-end, real FUSE mount (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.1.0
+        with:
+          go-version-file: go.mod
+      - name: Install FUSE
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fuse3
+          ls -l /dev/fuse
+      - name: End-to-end
+        env:
+          ESL_E2E_MOUNT: "1"
+        run: go test -tags e2e -count=1 -timeout 15m -run TestE2E -v ./internal/daemon
+
+  e2e-windows:
+    name: End-to-end, real WinFsp mount (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.1.0
+        with:
+          go-version-file: go.mod
+      - name: Install pinned WinFsp (checksum-verified)
+        shell: pwsh
+        run: |
+          Get-Content packaging/windows/winfsp.env | Where-Object { $_ -match '^[A-Z_]+=' } | ForEach-Object {
+            $k, $v = $_ -split '=', 2; Set-Item "env:$k" $v
+          }
+          Invoke-WebRequest $env:WINFSP_MSI_URL -OutFile winfsp.msi
+          $sum = (Get-FileHash winfsp.msi -Algorithm SHA256).Hash.ToLower()
+          if ($sum -ne $env:WINFSP_MSI_SHA256) { throw "WinFsp checksum mismatch: $sum" }
+          $p = Start-Process msiexec.exe -ArgumentList '/i','winfsp.msi','/qn','/norestart' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "WinFsp install failed: $($p.ExitCode)" }
+      - name: End-to-end
+        env:
+          ESL_E2E_MOUNT: "1"
+        run: go test -tags e2e,cmount -count=1 -timeout 15m -run TestE2E -v ./internal/daemon

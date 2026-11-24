@@ -1,0 +1,7 @@
+/dist/
+/out/
+*.exe
+*.msi
+/esl
+packaging/windows/winfsp.msi
+.DS_Store

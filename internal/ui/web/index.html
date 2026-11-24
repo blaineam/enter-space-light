@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Enter Space Light</title>
+<link rel="icon" href="icon.png">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand"><img src="icon.png" alt="" width="28" height="28"><span>Enter Space Light</span></div>
+  <nav id="tabs" aria-label="Sections">
+    <button data-tab="drives" class="on">Drives</button>
+    <button data-tab="syncs">Syncs</button>
+    <button data-tab="remotes">Remotes</button>
+    <button data-tab="settings">Settings</button>
+    <button data-tab="log">Log</button>
+  </nav>
+</header>
+<main>
+  <div id="banners"></div>
+  <section id="drives" class="tab on">
+    <div class="head"><h1>Drives</h1><button class="primary" id="add-drive">Add drive</button></div>
+    <p class="lede" id="drives-lede"></p>
+    <div id="drive-list" class="list"></div>
+  </section>
+  <section id="syncs" class="tab">
+    <div class="head"><h1>Syncs</h1><button class="primary" id="add-sync">Add sync</button></div>
+    <p class="lede">Copy or mirror folders on a schedule, at login, or when a particular USB drive is plugged in. Failed runs retry on their own.</p>
+    <div id="sync-list" class="list"></div>
+  </section>
+  <section id="remotes" class="tab">
+    <div class="head"><h1>Remotes</h1><div class="row"><button id="edit-conf">Edit rclone.conf</button><button class="primary" id="add-remote">Add remote</button></div></div>
+    <p class="lede" id="conf-path"></p>
+    <div id="remote-list" class="list"></div>
+  </section>
+  <section id="settings" class="tab">
+    <h1>Settings</h1>
+    <form id="prefs" class="card form">
+      <label class="check"><input type="checkbox" id="pref-autostart"> Start Enter Space Light when I sign in</label>
+      <label class="linux-only">Folder for automatic mount points<input id="pref-mountroot" placeholder="~/Cloud"></label>
+      <label class="linux-only check"><input type="checkbox" id="pref-bookmarks"> Add drives to the file manager sidebar</label>
+      <label>Cache size per drive <span class="hint">Leave empty to size it automatically from free disk space.</span><input id="pref-cache" placeholder="Automatic"></label>
+      <label>Bandwidth limit <span class="hint">e.g. <code>4M</code>, or a timetable like <code>08:00,2M 23:00,off</code>. Empty means unlimited.</span><input id="pref-bw" placeholder="Unlimited"></label>
+      <label>Log detail<select id="pref-log"><option value="">Normal</option><option>ERROR</option><option>INFO</option><option>DEBUG</option></select></label>
+      <div class="row end"><span class="saved" id="prefs-saved"></span><button class="primary" type="submit">Save</button></div>
+    </form>
+    <div class="card" id="winfsp-card"></div>
+    <div class="card" id="conf-card"></div>
+    <div class="card about">
+      <h2>About</h2>
+      <p id="about-version"></p>
+      <p>Free and open source under the GNU GPL v3. Built on <a href="https://rclone.org" target="_blank" rel="noopener">rclone</a>.</p>
+      <p class="win-only" id="winfsp-notice"></p>
+      <p>Want photos, video and music libraries, backups and the Files app? <a href="https://wemiller.com/apps/enter-space/" target="_blank" rel="noopener">Enter Space</a> for iPhone, iPad, Mac and Apple TV.</p>
+      <div class="row"><button id="quit" class="danger">Quit and disconnect drives</button></div>
+    </div>
+  </section>
+  <section id="log" class="tab">
+    <div class="head"><h1>Log</h1><div class="row"><button id="open-log">Open log folder</button><button id="refresh-log">Refresh</button></div></div>
+    <pre id="log-text" class="log"></pre>
+  </section>
+</main>
+
+<dialog id="dlg"><form method="dialog" id="dlg-form"></form></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+</body>
+</html>
