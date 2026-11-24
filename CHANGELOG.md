@@ -4,7 +4,7 @@ All notable changes to Enter Space Light. Versions follow [Semantic Versioning](
 
 ## [Unreleased]
 
-## [0.1.0] - unreleased
+## [0.1.0] - 2026-11-24
 
 First version, for Windows (x64, Arm) and Linux (x86_64, arm64).
 
