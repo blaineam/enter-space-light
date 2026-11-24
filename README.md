@@ -128,7 +128,7 @@ go test -tags e2e -run TestE2E ./internal/daemon   # end-to-end in a sandbox
 
 Windows builds need `-tags cmount`; `build.sh` handles it.
 
-QA runs under [Soren](https://github.com/blaineam) with `soren.config.mjs`: unit, end-to-end, cross-target vet, Apple manifest compatibility, the UI script, and `real-mounts`, which requires the GitHub Actions run for the same commit, where Windows (WinFsp) and Linux (FUSE) mount real drives, to be green. `ESL_HOME=/some/dir` sandboxes everything (settings, cache, `rclone.conf`, mount folders) for development. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+The QA gate is `soren.config.mjs`: unit, end-to-end, cross-target vet, Apple manifest compatibility, the UI script, and `real-mounts`, which requires the GitHub Actions run for the same commit, where Windows (WinFsp) and Linux (FUSE) mount real drives, to be green. `ESL_HOME=/some/dir` sandboxes everything (settings, cache, `rclone.conf`, mount folders) for development. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## License
 
