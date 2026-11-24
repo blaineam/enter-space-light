@@ -84,7 +84,12 @@ func eventually(t *testing.T, d time.Duration, what string, ok func() bool) {
 }
 
 func TestE2E(t *testing.T) {
-	home := t.TempDir()
+	// Not t.TempDir(): the embedded rclone keeps its log file open for the
+	// life of the process, and Windows refuses to delete open files, which
+	// would fail a passing test at cleanup.
+	home, err := os.MkdirTemp("", "esl-e2e-")
+	must(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(home) })
 	t.Setenv("ESL_HOME", home)
 	decoy := filepath.Join(home, "decoy", "rclone.conf") // stands in for the user's real config
 	t.Setenv("RCLONE_CONFIG", decoy)
