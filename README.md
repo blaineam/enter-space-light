@@ -18,6 +18,8 @@ It starts at sign-in, reconnects drives on its own, retries failed uploads and s
 
 Download `EnterSpaceLight-<version>-windows-<arch>-setup.exe` from [Releases](https://github.com/blaineam/enter-space-light/releases) and run it. It installs for your user account and needs no administrator rights, except for one step. If [WinFsp](https://winfsp.dev) (the free filesystem driver that makes drive letters possible) isn't installed yet, the installer adds it, and Windows asks for permission for that step only.
 
+The builds aren't code-signed yet, so SmartScreen may warn on first run: choose **More info → Run anyway**, after checking the download against `SHA256SUMS`.
+
 A portable `.zip` is also available. Without the installer, install WinFsp yourself (`winget install WinFsp.WinFsp`), or let the app do it from its settings window.
 
 ### Linux (x86_64 and arm64)

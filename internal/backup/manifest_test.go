@@ -14,7 +14,11 @@ import (
 // BackupManifestCodec (scripts/check-apple-compat.sh). Reading it proves a
 // Mac/iPhone backup is browsable here.
 func TestReadsAManifestWrittenByTheAppleApp(t *testing.T) {
-	b, err := os.ReadFile(filepath.Join("testdata", "apple-written.json.deflate"))
+	fixture := filepath.Join("testdata", "apple-written.json.deflate")
+	if p := os.Getenv("ESL_APPLE_MANIFEST"); p != "" { // freshly written by the Apple codec
+		fixture = p
+	}
+	b, err := os.ReadFile(fixture)
 	if err != nil {
 		t.Fatal(err)
 	}

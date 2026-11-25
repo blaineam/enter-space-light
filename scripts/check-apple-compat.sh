@@ -11,7 +11,11 @@ src="${1:-../Enter Space/EnterSpaceShared/BackupManifest.swift}"
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 cp scripts/apple-compat-main.swift "$work/main.swift"   # swiftc only allows top-level code in main.swift
 swiftc -O "$src" "$work/main.swift" -o "$work/compat"
-"$work/compat" write internal/backup/testdata/apple-written.json.deflate
-go test -count=1 -run TestReadsAManifestWrittenByTheAppleApp ./internal/backup
+# A QA gate must not modify the tree: test a freshly written Apple manifest
+# from a temp file. Pass --update (second argument) to refresh the committed
+# fixture after a deliberate format change.
+"$work/compat" write "$work/apple.json.deflate"
+if [ "${2:-}" = "--update" ]; then cp "$work/apple.json.deflate" internal/backup/testdata/apple-written.json.deflate; fi
+ESL_APPLE_MANIFEST="$work/apple.json.deflate" go test -count=1 -run TestReadsAManifestWrittenByTheAppleApp ./internal/backup
 ESL_WRITE_GO_MANIFEST="$work/go.json.deflate" go test -count=1 -run TestWritesWhatTheAppleAppReads ./internal/backup >/dev/null
 "$work/compat" read "$work/go.json.deflate" | grep -q '^ok ' && echo "Apple app reads Go manifests: ok"
