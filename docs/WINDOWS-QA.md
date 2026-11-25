@@ -63,6 +63,9 @@ whether WinFsp or rclone were already installed.
    `esl connect`.
 9. A second drive with a chosen letter, and one with a **folder** mount point.
 10. Choose a letter that is already in use: expect a clear error, not a hang.
+11. With a **disconnected mapped network drive** present (red X in Explorer,
+    ideally on Z:), an automatic-letter drive must connect on another letter.
+    Choosing the disconnected drive's letter must give a clear error.
 
 ## 3. Resilience
 

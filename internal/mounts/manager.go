@@ -336,6 +336,10 @@ func (mg *Manager) doMount(ctx context.Context, m settings.Mount, e *entry) {
 	}
 	out, err := mg.c.RC.Call(context.Background(), "mount/mount", in)
 	if err != nil {
+		// Let the platform avoid what just failed (another drive letter).
+		if n, ok := mg.c.Platform.(interface{ MountFailed(settings.Mount, string) }); ok {
+			n.MountFailed(m, mp)
+		}
 		fail(err)
 		return
 	}
@@ -539,6 +543,8 @@ func friendly(err error) string {
 	s := err.Error()
 	low := strings.ToLower(s)
 	switch {
+	case strings.Contains(low, "mount stopped before calling init"):
+		return "the system refused to create the drive — will try again (on Windows, with another letter)"
 	case strings.Contains(low, "mount option specified is not registered"):
 		return "this build can't mount on this operating system"
 	case strings.Contains(low, "didn't find section in config file"):

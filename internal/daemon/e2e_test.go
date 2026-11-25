@@ -100,7 +100,8 @@ func TestE2E(t *testing.T) {
 	}()
 	remoteRoot := filepath.Join(home, "remote-root")
 	must(t, os.MkdirAll(remoteRoot, 0o755))
-	write(t, filepath.Join(home, "rclone.conf"), fmt.Sprintf("[cloud]\ntype = alias\nremote = %s\n", remoteRoot))
+	// "My Cloud" has a space, as real remote names often do ("PCloud Syncs").
+	write(t, filepath.Join(home, "rclone.conf"), fmt.Sprintf("[cloud]\ntype = alias\nremote = %s\n\n[My Cloud]\ntype = alias\nremote = %s\n", remoteRoot, remoteRoot))
 
 	done := make(chan error, 1)
 	go func() { done <- daemon.Run(daemon.Options{Tray: false}) }()
@@ -119,7 +120,7 @@ func TestE2E(t *testing.T) {
 		must(t, c.Do(http.MethodGet, "/api/status", nil, &s))
 		return s
 	}
-	if s := get(); len(s.Config.Remotes) != 1 || s.Config.Remotes[0].Name != "cloud" {
+	if s := get(); len(s.Config.Remotes) != 2 || s.Config.Remotes[0].Name != "cloud" {
 		t.Fatalf("rclone.conf not loaded: %+v", s.Config)
 	}
 
@@ -520,6 +521,58 @@ func TestE2E(t *testing.T) {
 				}
 				return false
 			})
+		})
+	}
+
+	if os.Getenv("ESL_E2E_MOUNT") == "1" {
+		// mountAuto mounts remote under name with an automatic mount point,
+		// checks it reads, and disconnects.
+		mountAuto := func(t *testing.T, name, remote string) string {
+			t.Helper()
+			mp := ""
+			if runtime.GOOS != "windows" {
+				mp = filepath.Join(home, "mnt", name)
+			}
+			var m struct{ ID string }
+			must(t, c.Do(http.MethodPost, "/api/mounts", map[string]any{"name": name, "remote": remote, "autoMount": true, "mountPoint": mp}, &m))
+			defer func() {
+				must(t, c.Do(http.MethodDelete, "/api/mounts/"+m.ID, nil, nil))
+				time.Sleep(3 * time.Second)
+			}()
+			var where, last string
+			deadline := time.Now().Add(45 * time.Second)
+			for time.Now().Before(deadline) && where == "" {
+				for _, x := range get().Mounts {
+					if x.ID == m.ID {
+						last = x.State.Status + " " + x.State.Error
+						if x.State.Status == "mounted" {
+							where = x.State.MountPoint
+						}
+					}
+				}
+				time.Sleep(500 * time.Millisecond)
+			}
+			if where == "" {
+				t.Fatalf("%q (%s) never mounted: %s", name, remote, last)
+			}
+			root := where
+			if len(root) == 2 {
+				root += `\`
+			}
+			if _, err := os.ReadDir(root); err != nil {
+				t.Fatalf("reading %s: %v", root, err)
+			}
+			t.Logf("%q mounted at %s", name, where)
+			return where
+		}
+		t.Run("mount names with spaces", func(t *testing.T) { mountAuto(t, "PCloud Syncs", "My Cloud:") })
+		t.Run("mount beside a disconnected network drive", func(t *testing.T) {
+			if !ghostDrive(t, "Z:") {
+				t.Skip("Windows only")
+			}
+			if got := mountAuto(t, "Beside Ghost", "cloud:"); strings.EqualFold(got, "Z:") {
+				t.Fatalf("took the disconnected drive's letter")
+			}
 		})
 	}
 

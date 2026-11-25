@@ -9,17 +9,65 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/blaineam/enter-space-light/internal/settings"
 	"github.com/blaineam/enter-space-light/internal/winfsp"
 	"golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 )
 
 // OSPlatform is the Windows implementation.
 type OSPlatform struct{}
 
-// Prepare: "" → "*" (rclone picks the next free letter, from Z: down);
-// "X:" must be free; a folder must not exist yet (WinFsp creates it as a
+var (
+	lettersMu     sync.Mutex
+	failedLetters = map[byte]bool{}      // letters where a mount failed this session
+	givenLetters  = map[byte]time.Time{} // recently handed out, mount still starting
+)
+
+// letterTaken reports whether Windows has any claim on a drive letter: a
+// device (connected or not), or a remembered network drive that Explorer
+// shows with a red X.
+func letterTaken(l byte) bool {
+	if mask, err := windows.GetLogicalDrives(); err == nil && mask&(1<<uint(l-'A')) != 0 {
+		return true
+	}
+	k, err := registry.OpenKey(registry.CURRENT_USER, `Network\`+string(rune(l)), registry.QUERY_VALUE)
+	if err != nil {
+		return false
+	}
+	_ = k.Close()
+	return true
+}
+
+// autoLetter picks a letter, reserving it briefly so drives mounting at the
+// same moment don't choose the same one.
+func autoLetter() (string, error) {
+	lettersMu.Lock()
+	defer lettersMu.Unlock()
+	mp, err := pickLetter(func(l byte) bool {
+		return letterTaken(l) || time.Since(givenLetters[l]) < 20*time.Second
+	}, failedLetters)
+	if err == nil {
+		givenLetters[mp[0]] = time.Now()
+	}
+	return mp, err
+}
+
+// MountFailed makes the next automatic attempt try a different letter.
+func (OSPlatform) MountFailed(m settings.Mount, mountPoint string) {
+	if strings.TrimSpace(m.MountPoint) != "" || !settings.IsDriveLetter(mountPoint) {
+		return
+	}
+	lettersMu.Lock()
+	defer lettersMu.Unlock()
+	failedLetters[mountPoint[0]] = true
+	delete(givenLetters, mountPoint[0])
+}
+
+// Prepare: "" → the next free letter (see pickLetter); "X:" must be free; a folder must not exist yet (WinFsp creates it as a
 // reparse point) — an empty leftover folder is removed for the user.
 func (OSPlatform) Prepare(m settings.Mount, _ settings.Prefs) (string, error) {
 	if !winfsp.Installed() {
@@ -27,13 +75,12 @@ func (OSPlatform) Prepare(m settings.Mount, _ settings.Prefs) (string, error) {
 	}
 	mp := strings.TrimSpace(m.MountPoint)
 	if mp == "" {
-		return "*", nil
+		return autoLetter()
 	}
 	if settings.IsDriveLetter(mp) {
 		letter := strings.ToUpper(mp[:1])
-		mask, err := windows.GetLogicalDrives()
-		if err == nil && mask&(1<<uint(letter[0]-'A')) != 0 {
-			return "", fmt.Errorf("drive %s: is already in use — pick another letter or leave it automatic", letter)
+		if letterTaken(letter[0]) {
+			return "", fmt.Errorf("drive %s: is already in use (possibly by a disconnected network drive) — pick another letter or leave it automatic", letter)
 		}
 		return letter + ":", nil
 	}
