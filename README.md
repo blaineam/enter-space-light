@@ -30,6 +30,16 @@ A portable `.zip` is also available. Without the installer, install WinFsp yours
 
 Then start **Enter Space Light** from your app menu.
 
+### Uninstall
+
+- **Windows:** Settings → Apps → Installed apps → Enter Space Light → Uninstall. The portable zip: run `esl autostart off` and `esl quit`, then delete the folder. WinFsp is listed separately and can be removed the same way.
+- **Linux:** run `esl autostart off` and `esl quit`, then `sudo apt remove enter-space-light` or `sudo dnf remove enter-space-light`. For the tarball, delete `~/.local/bin/esl` and the `enter-space-light` desktop entry and icons under `~/.local/share`.
+- Your settings and `rclone.conf` are left in place; delete them by hand if you don't want them.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org). We're applying now: releases so far, including v0.1.0, are **not signed**. See the full [code signing policy](docs/CODE-SIGNING.md) (team roles, what gets signed) and the [privacy policy](PRIVACY.md).
+
 ## First run
 
 1. **Add a remote.** This is the cloud account or server. Providers that sign in through a browser (Google Drive, OneDrive, Dropbox…) open one. Already use rclone? Your existing `rclone.conf` is picked up automatically: it's the same file.

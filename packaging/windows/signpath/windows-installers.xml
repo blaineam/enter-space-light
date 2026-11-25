@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration, slug "windows-installers". Signing request
+  2 of 2: the Inno Setup installers, which already contain the signed
+  programs. Not yet validated by SignPath.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="productVersion" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file-set product-name="Enter Space Light" product-version="${productVersion}">
+      <include path="EnterSpaceLight-${productVersion}-windows-amd64-setup.exe" />
+      <include path="EnterSpaceLight-${productVersion}-windows-arm64-setup.exe" />
+      <for-each>
+        <authenticode-sign />
+      </for-each>
+    </pe-file-set>
+  </zip-file>
+</artifact-configuration>

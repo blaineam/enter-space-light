@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SignPath artifact configuration, slug "windows-binaries" (paste into the
+  SignPath project). Signing request 1 of 2: the programs, before the
+  installers are built around them. Not yet validated by SignPath.
+-->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <parameters>
+    <parameter name="productVersion" required="true" />
+  </parameters>
+  <zip-file>
+    <pe-file-set product-name="Enter Space Light" product-version="${productVersion}">
+      <include path="amd64/esl.exe" />
+      <include path="amd64/EnterSpaceLight.exe" />
+      <include path="arm64/esl.exe" />
+      <include path="arm64/EnterSpaceLight.exe" />
+      <for-each>
+        <authenticode-sign />
+      </for-each>
+    </pe-file-set>
+  </zip-file>
+</artifact-configuration>
