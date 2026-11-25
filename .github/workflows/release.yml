@@ -21,22 +21,7 @@ jobs:
       - name: Build
         run: OUT=dist ./scripts/build.sh "${GITHUB_REF_NAME}" linux/amd64 linux/arm64
       - name: Packages and tarballs
-        run: |
-          set -euo pipefail
-          go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.48.0
-          V="${GITHUB_REF_NAME#v}"
-          mkdir -p out
-          for arch in amd64 arm64; do
-            dir="dist/esl-$V-linux-$arch"
-            for fmt in deb rpm; do
-              VERSION="$V" ARCH="$arch" BIN="$dir/esl" nfpm package -f packaging/linux/nfpm.yaml -p "$fmt" -t out/
-            done
-            mkdir -p "$dir/icons"
-            cp assets/icon-*.png "$dir/icons/"
-            cp packaging/linux/install.sh packaging/linux/enter-space-light.desktop LICENSE NOTICE README.md "$dir/"
-            tar -C dist -czf "out/EnterSpaceLight-$V-linux-$arch.tar.gz" "esl-$V-linux-$arch"
-          done
-          ls -l out
+        run: ./scripts/package-linux.sh "${GITHUB_REF_NAME}"
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: linux

@@ -28,6 +28,7 @@ overrides:
 contents:
   - src: ${BIN}
     dst: /usr/bin/esl
+    expand: true # nfpm only substitutes environment variables here when asked
     file_info:
       mode: 0755
   - src: packaging/linux/enter-space-light.desktop
