@@ -124,8 +124,16 @@ func (OSPlatform) Healthy(mp string) error {
 // Released has nothing to clean up on Windows.
 func (OSPlatform) Released(settings.Mount, string) {}
 
-// Mounted: the drive letter itself is the Explorer integration.
-func (OSPlatform) Mounted(settings.Mount, string, settings.Prefs) {}
+// Mounted: the drive letter itself is the Explorer integration. The letter
+// is now Windows' to report as taken, so drop our reservation: after a quick
+// disconnect the drive gets the same letter back.
+func (OSPlatform) Mounted(_ settings.Mount, mountPoint string, _ settings.Prefs) {
+	if settings.IsDriveLetter(mountPoint) {
+		lettersMu.Lock()
+		defer lettersMu.Unlock()
+		delete(givenLetters, strings.ToUpper(mountPoint)[0])
+	}
+}
 
 // Forget has nothing to clean up on Windows.
 func (OSPlatform) Forget(settings.Mount, string) {}
