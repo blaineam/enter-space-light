@@ -2,7 +2,7 @@
 
 Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org).
 
-> **Status:** applying. Releases published so far, including v0.1.0, are **not signed**. This page will say so until the first signed release.
+> **Status:** applying. Releases published so far are **not signed**. This page will say so until the first signed release.
 
 ## What is signed
 

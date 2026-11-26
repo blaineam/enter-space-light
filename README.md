@@ -38,7 +38,7 @@ Then start **Enter Space Light** from your app menu.
 
 ## Code signing policy
 
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org). We're applying now: releases so far, including v0.1.0, are **not signed**. See the full [code signing policy](docs/CODE-SIGNING.md) (team roles, what gets signed) and the [privacy policy](PRIVACY.md).
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by [SignPath Foundation](https://signpath.org). We're applying now: releases so far are **not signed**. See the full [code signing policy](docs/CODE-SIGNING.md) (team roles, what gets signed) and the [privacy policy](PRIVACY.md).
 
 ## First run
 

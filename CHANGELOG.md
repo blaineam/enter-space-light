@@ -4,6 +4,8 @@ All notable changes to Enter Space Light. Versions follow [Semantic Versioning](
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-25
+
 - Fixed (Windows): drives set to an automatic letter never connected on a PC with a disconnected network drive ("failed to mount FUSE fs: mount stopped before calling Init"). The disconnected drive's letter, usually Z:, looked free, so the app tried it again and again. Enter Space Light now picks the letter itself, skips every letter Windows already has (including disconnected and remembered network drives), and tries another letter if one fails.
 
 ## [0.1.0] - 2026-11-24
