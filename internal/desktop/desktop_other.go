@@ -31,3 +31,5 @@ func RemoveBookmark(string) error { return nil }
 func HasDesktop() bool { return true }
 
 func notifyWindows(string, string) {}
+
+func notifyAndroid(string, string) {}

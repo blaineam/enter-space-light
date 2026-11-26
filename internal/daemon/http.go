@@ -87,6 +87,7 @@ func (d *Daemon) routes() http.Handler {
 		writeJSON(w, map[string]bool{"ok": true})
 	})
 	api.HandleFunc("POST /api/winfsp/install", d.installWinFsp)
+	api.HandleFunc("POST /api/android/permission", d.androidPermission)
 	api.HandleFunc("POST /api/quit", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, map[string]bool{"ok": true})
 		go func() { time.Sleep(200 * time.Millisecond); d.Quit() }()
@@ -215,6 +216,8 @@ type jobView struct {
 	settings.Job
 	State  jobs.State    `json:"state"`
 	Health *backup.Alert `json:"health,omitempty"`
+	// Waiting is why a due run is being held (Android: "waiting for Wi-Fi").
+	Waiting string `json:"waiting,omitempty"`
 }
 
 // Status is the whole UI model in one document.
@@ -246,6 +249,7 @@ type Status struct {
 	Mounts  []mountView      `json:"mounts"`
 	Jobs    []jobView        `json:"jobs"`
 	Volumes []volumes.Volume `json:"volumes"`
+	Android *androidStatus   `json:"android,omitempty"`
 }
 
 func (d *Daemon) snapshot() Status {
@@ -293,12 +297,13 @@ func (d *Daemon) snapshot() Status {
 	s.Jobs = []jobView{}
 	health := d.backupHealth(doc)
 	for _, j := range doc.Jobs {
-		s.Jobs = append(s.Jobs, jobView{Job: j, State: js[j.ID], Health: health[j.ID]})
+		s.Jobs = append(s.Jobs, jobView{Job: j, State: js[j.ID], Health: health[j.ID], Waiting: d.sched.Waiting(j)})
 	}
 	s.Volumes = d.vols.Current()
 	if s.Volumes == nil {
 		s.Volumes = []volumes.Volume{}
 	}
+	s.Android = androidSnapshot()
 	return s
 }
 

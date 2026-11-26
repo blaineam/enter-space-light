@@ -129,3 +129,5 @@ func notifyWindows(title, body string) {
 		go func() { _ = cmd.Wait() }()
 	}
 }
+
+func notifyAndroid(string, string) {}

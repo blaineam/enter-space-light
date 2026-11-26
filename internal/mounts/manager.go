@@ -304,7 +304,13 @@ func (mg *Manager) cacheBudget(doc settings.Settings) string {
 			n++
 		}
 	}
-	return tune.CacheBudget(mg.c.Platform.FreeBytes(mg.c.CacheDir), n, doc.Prefs.CacheMaxSize)
+	free := mg.c.Platform.FreeBytes(mg.c.CacheDir)
+	if mg.c.GOOS == "android" {
+		// Phones are short on space: plan with at most 40 GiB free, which
+		// caps the automatic cache at 8 GiB across drives.
+		free = min(free, 40*tune.GiB)
+	}
+	return tune.CacheBudget(free, n, doc.Prefs.CacheMaxSize)
 }
 
 func (mg *Manager) doMount(ctx context.Context, m settings.Mount, e *entry) {

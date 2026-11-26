@@ -119,6 +119,11 @@ type Prefs struct {
 	BWLimit string `json:"bwLimit,omitempty"`
 	// Bookmarks adds Linux mounts to the GTK file manager sidebar.
 	Bookmarks *bool `json:"bookmarks,omitempty"`
+	// SyncOnMobileData lets background syncs use mobile and other metered
+	// networks (Android). Off by default: they wait for Wi-Fi.
+	SyncOnMobileData bool `json:"syncOnMobileData,omitempty"`
+	// SyncOnlyCharging makes background syncs wait for a charger (Android).
+	SyncOnlyCharging bool `json:"syncOnlyCharging,omitempty"`
 	// LogLevel: "ERROR", "NOTICE" (default), "INFO", "DEBUG".
 	LogLevel string `json:"logLevel,omitempty"`
 }

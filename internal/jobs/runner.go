@@ -75,8 +75,19 @@ type Config struct {
 }
 
 type running struct {
-	live   Live
-	cancel context.CancelFunc
+	live       Live
+	cancel     context.CancelFunc
+	volumeRoot string
+}
+
+// VolumeRoot is the drive a running job was started for, or "".
+func (r *Runner) VolumeRoot(id string) string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if run, ok := r.running[id]; ok {
+		return run.volumeRoot
+	}
+	return ""
 }
 
 // Runner executes jobs.
@@ -132,7 +143,7 @@ func (r *Runner) Start(id, reason, volumeRoot string) error {
 		return ErrAlreadyRunning
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	run := &running{live: Live{Reason: reason, Started: r.c.Now(), Attempt: 1}, cancel: cancel}
+	run := &running{live: Live{Reason: reason, Started: r.c.Now(), Attempt: 1}, cancel: cancel, volumeRoot: volumeRoot}
 	r.running[id] = run
 	if r.book.LastStart == nil {
 		r.book.LastStart = map[string]time.Time{}

@@ -79,6 +79,7 @@ type Daemon struct {
 
 	quitOnce sync.Once
 	quitCh   chan struct{}
+	stop     func()
 }
 
 func randHex(n int) string {
@@ -111,18 +112,48 @@ func openSettings() (*settings.Store, string, error) {
 
 // Run starts the daemon and blocks until it is told to quit.
 func Run(o Options) error {
-	if err := paths.EnsureAll(); err != nil {
+	d, err := Start(o)
+	if err != nil {
 		return err
+	}
+	if o.Tray && desktop.HasDesktop() {
+		changes, unsub := d.hub.subscribe()
+		// Blocks on this (main) thread until Quit.
+		tray.Run(d.trayModel, changes, tray.Actions{
+			Open:     d.OpenUI,
+			OpenPath: func(p string) { _ = desktop.OpenFolder(p) },
+			Mount:    func(id string, want bool) { _ = d.mounts.SetWant(id, want) },
+			RunJob:   func(id string) { _ = d.runner.Start(id, "manual", "") },
+			StopJob:  func(id string) { d.runner.Stop(id) },
+			Seen:     func() { d.failures.Store(0); d.hub.notify() },
+			Quit:     d.Quit,
+		}, d.quitCh)
+		unsub()
+	}
+	d.Wait()
+	return nil
+}
+
+// Start brings the daemon up and returns once it is serving. Call Wait to
+// block until Quit and shut down. The Android app uses these directly; the
+// desktop uses Run.
+func Start(o Options) (_ *Daemon, err error) {
+	if err := paths.EnsureAll(); err != nil {
+		return nil, err
 	}
 	lk, err := lock.Acquire(paths.LockFile())
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer lk.Release()
+	defer func() {
+		if err != nil {
+			lk.Release()
+		}
+	}()
 
 	store, notice, err := openSettings()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	prefs := store.Get().Prefs
 	level := prefs.LogLevel
@@ -130,7 +161,7 @@ func Run(o Options) error {
 		level = "NOTICE"
 	}
 	if err := rcl.Init(rcl.Options{ConfigPath: paths.RcloneConfig(), CacheDir: paths.CacheDir(), LogFile: paths.LogFile(), LogLevel: level}); err != nil {
-		return err
+		return nil, err
 	}
 	logf("Enter Space Light %s starting (rclone %s, %s/%s), config %s", version.Version, rcl.Version(), runtime.GOOS, runtime.GOARCH, rcl.ConfigPath())
 
@@ -175,14 +206,15 @@ func Run(o Options) error {
 	})
 	d.sched = &jobs.Scheduler{Runner: d.runner, Store: store, Logf: logf, StartDelay: 45 * time.Second, VolumeCooldown: 10 * time.Minute}
 	d.vols = volumes.NewWatcher(nil, 3*time.Second)
+	d.sched.Hold = d.hold
 	d.applyPrefs()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return err
+		cancel()
+		return nil, err
 	}
 	d.host = ln.Addr().String()
 	srv := &http.Server{Handler: d.routes(), ReadHeaderTimeout: 10 * time.Second}
@@ -192,16 +224,20 @@ func Run(o Options) error {
 		}
 	}()
 	if err := settings.WriteJSONAtomic(paths.APIFile(), Handshake{URL: "http://" + d.host, Token: d.token, PID: os.Getpid(), Version: version.Version}); err != nil {
-		return fmt.Errorf("writing %s: %w", paths.APIFile(), err)
+		cancel()
+		_ = srv.Close()
+		return nil, fmt.Errorf("writing %s: %w", paths.APIFile(), err)
 	}
-	defer func() { _ = os.Remove(paths.APIFile()) }()
 
 	d.mounts.Start(ctx)
 	go d.sched.Run(ctx, 15*time.Second)
 	go d.vols.Run(ctx, func(v volumes.Volume) {
 		d.hub.notify()
 		d.sched.VolumeArrived(v)
-	}, func(volumes.Volume) { d.hub.notify() })
+	}, func(v volumes.Volume) {
+		d.sched.VolumeRemoved(v)
+		d.hub.notify()
+	})
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -219,31 +255,25 @@ func Run(o Options) error {
 		d.OpenUI()
 	}
 
-	if o.Tray && desktop.HasDesktop() {
-		changes, unsub := d.hub.subscribe()
-		// Blocks on this (main) thread until Quit.
-		tray.Run(d.trayModel, changes, tray.Actions{
-			Open:     d.OpenUI,
-			OpenPath: func(p string) { _ = desktop.OpenFolder(p) },
-			Mount:    func(id string, want bool) { _ = d.mounts.SetWant(id, want) },
-			RunJob:   func(id string) { _ = d.runner.Start(id, "manual", "") },
-			StopJob:  func(id string) { d.runner.Stop(id) },
-			Seen:     func() { d.failures.Store(0); d.hub.notify() },
-			Quit:     d.Quit,
-		}, d.quitCh)
-		unsub()
+	d.stop = func() {
+		logf("stopping syncs and unmounting")
+		cancel()
+		d.runner.StopAll(10 * time.Second)
+		d.mounts.Shutdown(20 * time.Second)
+		sctx, scancel := context.WithTimeout(context.Background(), 2*time.Second)
+		_ = srv.Shutdown(sctx)
+		scancel()
+		_ = os.Remove(paths.APIFile())
+		lk.Release()
+		logf("stopped")
 	}
-	<-d.quitCh
+	return d, nil
+}
 
-	logf("stopping syncs and unmounting")
-	cancel()
-	d.runner.StopAll(10 * time.Second)
-	d.mounts.Shutdown(20 * time.Second)
-	sctx, scancel := context.WithTimeout(context.Background(), 2*time.Second)
-	_ = srv.Shutdown(sctx)
-	scancel()
-	logf("stopped")
-	return nil
+// Wait blocks until Quit, then shuts everything down. Call it once.
+func (d *Daemon) Wait() {
+	<-d.quitCh
+	d.stop()
 }
 
 // Quit asks the daemon to stop.

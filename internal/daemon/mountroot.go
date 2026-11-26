@@ -9,7 +9,7 @@ import (
 
 // mountRoot is where automatic mount points go, for display.
 func mountRoot(p settings.Prefs) string {
-	if runtime.GOOS == "windows" {
+	if runtime.GOOS == "windows" || runtime.GOOS == "android" {
 		return ""
 	}
 	return paths.MountRoot(p.MountRoot)

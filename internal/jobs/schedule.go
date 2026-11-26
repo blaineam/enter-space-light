@@ -27,10 +27,80 @@ type Scheduler struct {
 	StartDelay time.Duration
 	// VolumeCooldown ignores a drive re-appearing (a flaky hub) this soon.
 	VolumeCooldown time.Duration
+	// Hold, if set, says why a job may not run on its own right now (on a
+	// phone: no Wi-Fi, not charging), or "". A held run happens once when
+	// the reason clears. Runs the user starts are never held.
+	Hold func(settings.Job) string
 
 	mu        sync.Mutex
 	started   time.Time
 	startDone map[string]bool
+	deferred  map[string]deferredRun
+}
+
+type deferredRun struct {
+	reason, volumeRoot string
+}
+
+func (s *Scheduler) held(j settings.Job) string {
+	if s.Hold == nil {
+		return ""
+	}
+	return s.Hold(j)
+}
+
+// Defer remembers that a job still owes a run.
+func (s *Scheduler) Defer(id, reason, volumeRoot string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.deferred == nil {
+		s.deferred = map[string]deferredRun{}
+	}
+	s.deferred[id] = deferredRun{reason, volumeRoot}
+}
+
+func (s *Scheduler) takeDeferred(id string) (deferredRun, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d, ok := s.deferred[id]
+	delete(s.deferred, id)
+	return d, ok
+}
+
+// Waiting says why a job that is due is not running, or "".
+func (s *Scheduler) Waiting(j settings.Job) string {
+	s.mu.Lock()
+	_, owed := s.deferred[j.ID]
+	s.mu.Unlock()
+	if !owed {
+		return ""
+	}
+	return s.held(j)
+}
+
+// PauseHeld stops background runs that may no longer run (Wi-Fi was lost)
+// and owes them a run. It returns how many it stopped.
+func (s *Scheduler) PauseHeld() int {
+	if s.Hold == nil {
+		return 0
+	}
+	doc := s.Store.Get()
+	n := 0
+	for i, st := range s.Runner.Snapshot() {
+		if i >= len(doc.Jobs) || st.Running == nil || st.Running.Reason == "manual" {
+			continue
+		}
+		j := doc.Jobs[i]
+		why := s.Hold(j)
+		if why == "" {
+			continue
+		}
+		s.logf("pausing %q: %s", j.Name, why)
+		s.Defer(j.ID, st.Running.Reason, s.Runner.VolumeRoot(j.ID))
+		s.Runner.Stop(j.ID)
+		n++
+	}
+	return n
 }
 
 func (s *Scheduler) now() time.Time {
@@ -81,7 +151,23 @@ func (s *Scheduler) Tick() {
 		if !j.Enabled || s.Runner.Running(j.ID) {
 			continue
 		}
+		why := s.held(j)
+		if why == "" {
+			if d, ok := s.takeDeferred(j.ID); ok {
+				// This run also satisfies a daily slot that passed meanwhile.
+				if slot := DailySlot(j.Triggers.Daily, now); j.Triggers.Daily != "" && !slot.IsZero() {
+					s.Runner.MarkDaily(j.ID, slot)
+				}
+				s.fire(j, d.reason, d.volumeRoot)
+				continue
+			}
+		}
 		if reason := s.due(j, now, started); reason != "" {
+			if why != "" {
+				s.Defer(j.ID, reason, "")
+				s.logf("%q is due but %s", j.Name, why)
+				continue
+			}
 			s.fire(j, reason, "")
 		}
 	}
@@ -165,7 +251,23 @@ func (s *Scheduler) VolumeArrived(v volumes.Volume) {
 			s.logf("drive %s reconnected; %q ran %s ago, skipping", v.Label, j.Name, now.Sub(last).Round(time.Second))
 			continue
 		}
+		if why := s.held(j); why != "" {
+			s.Defer(j.ID, "drive "+v.Label, v.Root)
+			s.logf("%q is due but %s", j.Name, why)
+			continue
+		}
 		s.fire(j, "drive "+v.Label, v.Root)
+	}
+}
+
+// VolumeRemoved drops runs still owed to a drive that has gone.
+func (s *Scheduler) VolumeRemoved(v volumes.Volume) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for id, d := range s.deferred {
+		if v.Root != "" && d.volumeRoot == v.Root {
+			delete(s.deferred, id)
+		}
 	}
 }
 

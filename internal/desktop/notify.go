@@ -10,6 +10,8 @@ import (
 // information.
 func Notify(title, body string) {
 	switch runtime.GOOS {
+	case "android":
+		notifyAndroid(title, body)
 	case "linux", "freebsd":
 		if p, err := exec.LookPath("notify-send"); err == nil {
 			_ = detach(p, "--app-name=Enter Space Light", "--icon=enter-space-light", title, body)

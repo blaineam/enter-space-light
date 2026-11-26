@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux && !android
 
 package desktop
 
@@ -200,3 +200,5 @@ func editBookmarks(fn func([]string) []string) error {
 }
 
 func notifyWindows(string, string) {}
+
+func notifyAndroid(string, string) {}

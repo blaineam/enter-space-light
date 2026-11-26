@@ -119,11 +119,16 @@ func (d *Daemon) backupSetup(w http.ResponseWriter, _ *http.Request) {
 	}
 	host, _ := os.Hostname()
 	host = strings.SplitN(host, ".", 2)[0] // "desk.lan" → "desk"
+	folders := []string{"Documents", "Desktop", "Pictures", "Music", "Videos", "Downloads"}
+	if runtime.GOOS == "android" {
+		home, host = androidStorage(), androidDeviceName()
+		folders = []string{"DCIM", "Pictures", "Documents", "Download", "Movies", "Music", "Recordings"}
+	}
 	info := setupInfo{OS: runtime.GOOS, Home: home, Computer: host, Groups: backup.Groups(runtime.GOOS), Volumes: d.vols.Current(), Remotes: d.snapshot().Config.Remotes}
 	if info.Volumes == nil {
 		info.Volumes = []volumes.Volume{}
 	}
-	for _, f := range []string{"Documents", "Desktop", "Pictures", "Music", "Videos", "Downloads"} {
+	for _, f := range folders {
 		if st, err := os.Stat(filepath.Join(home, f)); err == nil && st.IsDir() {
 			info.Folders = append(info.Folders, filepath.Join(home, f))
 		}

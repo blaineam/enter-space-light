@@ -132,10 +132,32 @@ func linuxGroups() []ExcludeGroup {
 	}
 }
 
+// androidGroups' rules are relative to shared storage.
+func androidGroups() []ExcludeGroup {
+	return []ExcludeGroup{
+		{ID: "system", Title: "Other apps' private folders", DefaultOn: true, Recommended: true,
+			Why:   "Android doesn't let any app read these, so including them only causes errors.",
+			Rules: []string{"- /Android/data/**", "- /Android/obb/**"}},
+		{ID: "temp", Title: "Thumbnails, caches and recycle bins", DefaultOn: true, Recommended: true,
+			Why: "Rebuilt automatically, or files you already deleted.",
+			Rules: []string{
+				"- **/.thumbnails/**", "- **/.thumbdata*", "- **/.cache/**", "- **/cache/**",
+				"- **/.trashed-*", "- **/.pending-*", "- **/.Trash/**", "- **/.trash/**", "- /LOST.DIR/**",
+				"- **/*.tmp",
+			}},
+		{ID: "appmedia", Title: "Other apps' downloaded media", DefaultOn: false,
+			Why:   "Messaging and streaming apps keep large copies of media here.",
+			Rules: []string{"- /Android/media/**"}},
+	}
+}
+
 // Groups returns the exclude groups for goos.
 func Groups(goos string) []ExcludeGroup {
-	if goos == "windows" {
+	switch goos {
+	case "windows":
 		return windowsGroups()
+	case "android":
+		return androidGroups()
 	}
 	return linuxGroups()
 }

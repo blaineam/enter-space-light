@@ -197,6 +197,16 @@ func MountParams(m settings.Mount, backend string, env Env) Params {
 	}
 
 	switch env.GOOS {
+	case "android":
+		// A phone has less memory than a desktop: smaller buffers and
+		// read-ahead per open file.
+		p["buffer_size"] = "4M"
+		p["vfs_read_ahead"] = "8M"
+		p["vfs_read_chunk_size"] = "8M"
+		p["vfs_read_chunk_size_limit"] = "128M"
+		p["vfs_cache_min_free_space"] = "1G"
+		// Another app may be killed or closed mid-edit; upload promptly.
+		p["vfs_write_back"] = "3s"
 	case "windows":
 		// Network mode makes Explorer treat the drive like a mapped share:
 		// no recycle bin, no thumbnail-cache writes, correct free space,

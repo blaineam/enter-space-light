@@ -23,6 +23,15 @@ func dirName() string {
 	return "enter-space-light"
 }
 
+// base, when set, replaces the per-user directories (Android, where the app
+// passes its private storage). Unlike ESL_HOME it is not a sandbox.
+var base struct{ config, state, cache string }
+
+// SetBase puts settings, state and the VFS cache in these directories.
+func SetBase(config, state, cache string) {
+	base.config, base.state, base.cache = config, state, cache
+}
+
 // Home returns the ESL_HOME override, or "".
 func Home() string { return os.Getenv("ESL_HOME") }
 
@@ -30,6 +39,9 @@ func Home() string { return os.Getenv("ESL_HOME") }
 func ConfigDir() string {
 	if h := Home(); h != "" {
 		return filepath.Join(h, "config")
+	}
+	if base.config != "" {
+		return base.config
 	}
 	d, err := os.UserConfigDir()
 	if err != nil {
@@ -43,6 +55,9 @@ func ConfigDir() string {
 func StateDir() string {
 	if h := Home(); h != "" {
 		return filepath.Join(h, "state")
+	}
+	if base.state != "" {
+		return base.state
 	}
 	switch runtime.GOOS {
 	case "windows":
@@ -70,6 +85,9 @@ func StateDir() string {
 func CacheDir() string {
 	if h := Home(); h != "" {
 		return filepath.Join(h, "cache")
+	}
+	if base.cache != "" {
+		return base.cache
 	}
 	if runtime.GOOS == "windows" {
 		if d := os.Getenv("LOCALAPPDATA"); d != "" {
@@ -111,6 +129,9 @@ func BisyncDir() string { return filepath.Join(StateDir(), "bisync") }
 func RcloneConfig() string {
 	if h := Home(); h != "" {
 		return filepath.Join(h, "rclone.conf")
+	}
+	if base.config != "" {
+		return filepath.Join(base.config, "rclone.conf")
 	}
 	return os.Getenv("RCLONE_CONFIG")
 }
