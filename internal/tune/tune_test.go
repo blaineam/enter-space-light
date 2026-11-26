@@ -34,7 +34,7 @@ func knownOptions(t *testing.T) (mount, sync map[string]bool) {
 
 func TestEveryMountOptionIsARealRcloneOption(t *testing.T) {
 	mount, _ := knownOptions(t)
-	for _, goos := range []string{"windows", "linux"} {
+	for _, goos := range []string{"windows", "linux", "android"} {
 		for _, backend := range []string{"drive", "s3", "sftp", "mega"} {
 			p := MountParams(settings.Mount{Name: "X", ReadOnly: true}, backend, Env{GOOS: goos, CacheBudget: "10G"})
 			for k := range p {

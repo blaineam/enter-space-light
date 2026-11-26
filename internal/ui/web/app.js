@@ -54,8 +54,8 @@ async function act(fn, ok) {
 
 function signedOut() {
   fill(document.body, h('main', {}, h('div', { class: 'empty' },
-    h('strong', {}, 'This window is no longer connected'),
-    'Open Enter Space Light again from its tray icon, or run ', h('code', {}, 'esl open'), '.')));
+    h('strong', {}, isDroid() ? 'Enter Space Light has stopped' : 'This window is no longer connected'),
+    isDroid() ? 'Close this app and open it again to start it.' : ['Open Enter Space Light again from its tray icon, or run ', h('code', {}, 'esl open'), '.'])));
 }
 
 // ---------- formatting ----------
@@ -78,6 +78,7 @@ function until(t) {
   return s < 60 ? Math.round(s) + 's' : Math.round(s / 60) + ' min';
 }
 const isWin = () => S && S.os === 'windows';
+const isDroid = () => S && S.os === 'android';
 const KIND = { copy: 'Copy', sync: 'Mirror', move: 'Move', bisync: 'Two-way' };
 const KIND_HELP = {
   copy: 'Copies new and changed files. Never deletes anything at the destination.',
@@ -91,6 +92,7 @@ async function refresh() {
   try { S = await api('GET', '/api/status'); } catch { return; }
   document.body.classList.toggle('os-windows', S.os === 'windows');
   document.body.classList.toggle('os-linux', S.os === 'linux');
+  document.body.classList.toggle('os-android', S.os === 'android');
   renderBanners();
   if (!editing) { renderDrives(); renderSyncs(); renderRemotes(); renderSettings(); }
   if ($('portal').classList.contains('on')) renderRestoreStatus();
@@ -104,14 +106,22 @@ function renderBanners() {
       h('span', {}, S.winfsp.installing ? 'Installing WinFsp… approve the Windows prompt if one appears.' : 'Drives need WinFsp, the free Windows filesystem driver. Install it once and drives connect automatically.'),
       S.winfsp.installing ? null : h('button', { class: 'primary', onclick: () => act(() => api('POST', '/api/winfsp/install')) }, 'Install WinFsp')));
   }
+  for (const p of (S.android && S.android.permissions) || []) {
+    if (p.granted || !p.required) continue;
+    b.append(h('div', { class: 'banner warn' }, h('span', {}, p.title + ': ' + p.why), allowButton(p)));
+  }
   if (S.config.locked) {
     const pw = h('input', { type: 'password', placeholder: 'rclone.conf password', autocomplete: 'current-password' });
     const remember = h('input', { type: 'checkbox', checked: true });
     b.append(h('div', { class: 'banner warn' },
       h('span', {}, 'Your rclone.conf is encrypted. Unlock it to connect drives and run syncs.'),
-      h('form', { onsubmit: async (e) => { e.preventDefault(); const r = await act(() => api('POST', '/api/unlock', { password: pw.value, remember: remember.checked })); if (r) toast(r.saved ? 'Unlocked and saved to your keychain' : 'Unlocked'); } },
+      h('form', { onsubmit: async (e) => { e.preventDefault(); const r = await act(() => api('POST', '/api/unlock', { password: pw.value, remember: remember.checked })); if (r) toast(r.saved ? (isDroid() ? 'Unlocked and saved on this phone' : 'Unlocked and saved to your keychain') : 'Unlocked'); } },
         pw, h('label', { class: 'check' }, remember, 'Remember'), h('button', { class: 'primary' }, 'Unlock'))));
   }
+}
+
+function allowButton(p) {
+  return h('button', { class: 'primary', onclick: () => act(() => api('POST', '/api/android/permission', { id: p.id })) }, 'Allow');
 }
 
 function mountDot(st) {
@@ -121,13 +131,16 @@ function mountDot(st) {
   return '';
 }
 function mountWhere(m) {
+  if (isDroid()) return 'Files app › ' + m.name;
   if (m.state.mountPoint) return m.state.mountPoint;
   if (m.mountPoint) return m.mountPoint;
   return isWin() ? 'next free drive letter' : (S.mountRoot + '/' + m.name);
 }
 
 function renderDrives() {
-  $('drives-lede').textContent = isWin()
+  $('drives-lede').textContent = isDroid()
+    ? 'Each drive appears in the Files app, and in the “open” and “save” screens of other apps. They read and write it directly.'
+    : isWin()
     ? 'Each drive appears in File Explorer like a mapped network drive, and works from any app or terminal.'
     : 'Each drive appears as a folder (in ' + S.mountRoot + ' unless you choose another) that works from any app or terminal.';
   const list = $('drive-list'); fill(list);
@@ -150,7 +163,7 @@ function renderDrives() {
         h('div', { class: 'sub' }, m.remote, '  →  ', mountWhere(m)),
         line),
       h('div', { class: 'actions' },
-        connected ? h('button', { onclick: () => act(() => api('POST', `/api/mounts/${m.id}/open`)) }, 'Open') : null,
+        connected ? h('button', { onclick: () => act(() => api('POST', `/api/mounts/${m.id}/open`)) }, isDroid() ? 'Show in Files' : 'Open') : null,
         connected || st.status === 'mounting' || st.want
           ? h('button', { onclick: () => act(() => api('POST', `/api/mounts/${m.id}/disconnect`), 'Disconnected') }, st.status === 'retrying' ? 'Stop trying' : 'Disconnect')
           : h('button', { class: 'primary', onclick: () => act(() => api('POST', `/api/mounts/${m.id}/connect`)) }, 'Connect'),
@@ -179,7 +192,7 @@ function jobStatusLine(j) {
 
 function triggerText(t) {
   const parts = [];
-  if (t.onStart) parts.push('at sign-in');
+  if (t.onStart) parts.push(isDroid() ? 'when the phone starts' : 'at sign-in');
   if (t.every) parts.push('every ' + t.every);
   if (t.daily) parts.push('daily at ' + t.daily);
   if (t.onVolume) parts.push('when “' + (t.onVolume.label || t.onVolume.id) + '” is connected');
@@ -187,6 +200,7 @@ function triggerText(t) {
 }
 
 function renderSyncs() {
+  if (isDroid()) $('syncs-lede').textContent = 'Backups keep earlier versions of changed and deleted files so you can go back in time. Syncs copy or mirror folders. Both run on a schedule, when the phone starts, or when a particular USB drive is plugged in, and retry on their own.';
   const list = $('sync-list'); fill(list);
   if (!S.jobs.length) {
     list.append(h('div', { class: 'empty' }, h('strong', {}, 'Nothing set up yet'), 'Back up your files to the cloud every night, or to a USB drive whenever it is plugged in.',
@@ -208,6 +222,7 @@ function renderSyncs() {
         h('div', { class: 'sub' }, 'Runs ' + triggerText(j.triggers) + (j.backup ? ' · ' + historyText(j.backup.retentionDays) : '')),
         st.running && st.running.phase ? h('div', { class: 'sub' }, st.running.phase === 'checking' ? 'Checking it is safe to run…' : 'Recording this backup for Time Portal…') : null,
         jobStatusLine(j),
+        j.waiting ? h('div', { class: 'warn' }, 'Due, ' + j.waiting) : null,
         j.health ? h('div', { class: 'health ' + (j.health.critical ? 'critical' : 'warning') }, '⚠ ' + j.health.message) : null),
       h('div', { class: 'actions' },
         running ? h('button', { onclick: () => act(() => api('POST', `/api/jobs/${j.id}/stop`), 'Stopping') }, 'Stop')
@@ -222,7 +237,8 @@ function historyText(days) { return days ? `keeps old versions ${days} days` : '
 function renderRemotes() {
   $('conf-path').textContent = 'Stored in ' + S.config.path + (S.config.encrypted ? ' (encrypted)' : '') + '. The same file the rclone command line uses.';
   $('edit-conf').disabled = S.config.encrypted;
-  $('edit-conf').title = S.config.encrypted ? 'Encrypted configs are edited with: esl rclone config' : '';
+  $('edit-conf').title = S.config.encrypted ? (isDroid() ? 'An encrypted rclone.conf can’t be edited here' : 'Encrypted configs are edited with: esl rclone config') : '';
+  if (isDroid()) $('conf-path').textContent = 'Your remotes are kept in rclone.conf in this app’s private storage' + (S.config.encrypted ? ' (encrypted)' : '') + '. To bring your own, paste it into Edit rclone.conf.';
   const list = $('remote-list'); fill(list);
   if (S.config.locked) { list.append(h('div', { class: 'empty' }, h('strong', {}, 'Locked'), 'Unlock rclone.conf above to see your remotes.')); return; }
   if (!S.config.remotes.length) {
@@ -249,6 +265,17 @@ function renderSettings() {
   $('pref-cache').value = S.prefs.cacheMaxSize || '';
   $('pref-bw').value = S.prefs.bwLimit || '';
   $('pref-log').value = S.prefs.logLevel || '';
+  $('pref-autostart-label').textContent = isDroid() ? 'Start when the phone starts' : 'Start Enter Space Light when I sign in';
+  $('pref-mobiledata').checked = !!S.prefs.syncOnMobileData;
+  $('pref-charging').checked = !!S.prefs.syncOnlyCharging;
+  $('quit').textContent = isDroid() ? 'Stop (disconnects drives and pauses syncs)' : 'Quit and disconnect drives';
+  const pc = $('permissions-card');
+  pc.classList.toggle('hidden', !S.android);
+  if (S.android) {
+    fill(pc, h('h2', {}, 'Permissions'), S.android.permissions.map((p) => h('div', { class: 'permission' },
+      h('div', {}, h('b', {}, p.title), h('span', { class: 'hint' }, p.why)),
+      p.granted ? h('span', { class: 'saved' }, 'Allowed') : allowButton(p))));
+  }
   $('about-version').textContent = `Version ${S.version} · rclone ${S.rclone} · ${S.os}/${S.arch}`;
   fill($('winfsp-notice'), S.winfsp.notice + ' — ', h('a', { href: S.winfsp.url, target: '_blank', rel: 'noopener' }, S.winfsp.url));
 
@@ -260,7 +287,9 @@ function renderSettings() {
 
   const cc = $('conf-card');
   fill(cc, h('h2', {}, 'rclone.conf'), h('p', { class: 'sub' }, S.config.path),
-    S.config.encrypted ? h('p', {}, S.config.passwordSaved ? 'Encrypted. The password is saved in your system keychain, so it unlocks at sign-in.' : 'Encrypted. You will be asked for the password each time Enter Space Light starts.') : h('p', {}, 'Not encrypted. Use ', h('code', {}, 'esl rclone config'), ' and choose “Set configuration password” to encrypt it.'),
+    S.config.encrypted ? h('p', {}, S.config.passwordSaved ? 'Encrypted. The password is saved on this device, so it unlocks when the app starts.' : 'Encrypted. You will be asked for the password each time Enter Space Light starts.')
+      : isDroid() ? h('p', {}, 'Not encrypted. It is stored in this app’s private storage, which other apps can’t read.')
+        : h('p', {}, 'Not encrypted. Use ', h('code', {}, 'esl rclone config'), ' and choose “Set configuration password” to encrypt it.'),
     S.config.encrypted && S.config.passwordSaved ? h('button', { onclick: () => act(() => api('POST', '/api/forget-password'), 'Password removed from keychain') }, 'Forget saved password') : null);
 }
 
@@ -364,9 +393,9 @@ function driveDialog(m, presetRemote) {
   const { err, form } = openDialog(isNew ? 'Add drive' : 'Edit drive', [
     field('Remote', remoteSel),
     h('label', {}, 'Folder on the remote', h('span', { class: 'hint' }, 'Optional: mount just one folder.'), h('div', { class: 'inline' }, sub, picker.btn)), picker.box,
-    field('Name', name, isWin() ? 'Shown in File Explorer.' : 'Also the folder name.'),
-    field(isWin() ? 'Drive letter' : 'Mount folder', where, isWin() ? null : 'Leave empty for ' + S.mountRoot + '/<name>.'), where.extra || null,
-    check('Connect automatically when I sign in', auto),
+    field('Name', name, isDroid() ? 'Shown in the Files app.' : isWin() ? 'Shown in File Explorer.' : 'Also the folder name.'),
+    isDroid() ? null : field(isWin() ? 'Drive letter' : 'Mount folder', where, isWin() ? null : 'Leave empty for ' + S.mountRoot + '/<name>.'), where.extra || null,
+    check(isDroid() ? 'Connect automatically when the app starts' : 'Connect automatically when I sign in', auto),
     check('Read-only', ro),
     h('details', {}, h('summary', {}, 'Advanced rclone options'),
       h('p', { class: 'help' }, 'Automatic tuning picks caching, chunk sizes, parallelism and rate limits for this provider. Anything you set here wins. Use rclone flag names without the leading dashes.'), opts),
@@ -381,7 +410,7 @@ function driveDialog(m, presetRemote) {
     err.textContent = '';
     let options;
     try { options = parseOptions(opts.value); } catch (x) { err.textContent = x.message; return; }
-    const body = { name: name.value.trim(), remote: remoteSel.value + ':' + sub.value.trim().replace(/^\/+/, ''), mountPoint: where.read(), autoMount: auto.checked, readOnly: ro.checked, options };
+    const body = { name: name.value.trim(), remote: remoteSel.value + ':' + sub.value.trim().replace(/^\/+/, ''), mountPoint: isDroid() ? '' : where.read(), autoMount: auto.checked, readOnly: ro.checked, options };
     save.disabled = true;
     try {
       if (isNew) await api('POST', '/api/mounts', body); else await api('PUT', `/api/mounts/${m.id}`, body);
@@ -400,7 +429,7 @@ function syncDialog(j) {
   kind.value = j.kind;
   const kindHelp = h('p', { class: 'help' }, KIND_HELP[j.kind]);
   kind.addEventListener('change', () => { kindHelp.textContent = KIND_HELP[kind.value]; });
-  const src = h('input', { value: j.source, required: true, placeholder: isWin() ? 'C:\\Users\\you\\Pictures  or  gdrive:Photos' : '/home/you/Pictures  or  gdrive:Photos' });
+  const src = h('input', { value: j.source, required: true, placeholder: isDroid() ? S.android.storage + '/DCIM  or  gdrive:Photos' : isWin() ? 'C:\\Users\\you\\Pictures  or  gdrive:Photos' : '/home/you/Pictures  or  gdrive:Photos' });
   const dst = h('input', { value: j.dest, required: true, placeholder: 'b2:backup/photos  or  {volume}/Backup' });
   const remotePick = (input) => {
     const sel = h('select', {}, h('option', { value: '' }, 'Browse a remote…'), S.config.remotes.map((r) => h('option', { value: r.name + ':' }, r.name)));
@@ -435,7 +464,7 @@ function syncDialog(j) {
     h('label', {}, 'Source', ...remotePick(src)),
     h('label', {}, 'Destination', ...remotePick(dst)),
     h('fieldset', {}, h('legend', {}, 'When it runs'),
-      check('At sign-in', onStart),
+      check(isDroid() ? 'When the phone starts' : 'At sign-in', onStart),
       h('div', { class: 'grid2' }, field('Interval', h('div', {}, everySel, everyCustom)), field('Daily at', daily)),
       field('When this drive is connected', volSel), volHint, insertVol),
     h('details', {}, h('summary', {}, 'Filters and advanced options'),
@@ -627,12 +656,12 @@ async function confDialog() {
 // ---------- settings / log ----------
 $('prefs').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const prefs = { mountRoot: $('pref-mountroot').value.trim(), cacheMaxSize: $('pref-cache').value.trim(), bwLimit: $('pref-bw').value.trim(), logLevel: $('pref-log').value };
+  const prefs = { syncOnMobileData: $('pref-mobiledata').checked, syncOnlyCharging: $('pref-charging').checked, mountRoot: $('pref-mountroot').value.trim(), cacheMaxSize: $('pref-cache').value.trim(), bwLimit: $('pref-bw').value.trim(), logLevel: $('pref-log').value };
   if (S.os === 'linux') prefs.bookmarks = $('pref-bookmarks').checked;
   const ok = await act(() => api('PUT', '/api/prefs', prefs));
   if (ok) { $('prefs-saved').textContent = 'Saved'; setTimeout(() => { $('prefs-saved').textContent = ''; }, 2000); }
 });
-$('pref-autostart').addEventListener('change', (e) => act(() => api('POST', '/api/autostart', { on: e.target.checked }), e.target.checked ? 'Will start at sign-in' : 'Will not start at sign-in'));
+$('pref-autostart').addEventListener('change', (e) => act(() => api('POST', '/api/autostart', { on: e.target.checked }), e.target.checked ? (isDroid() ? 'Will start with the phone' : 'Will start at sign-in') : (isDroid() ? 'Will not start with the phone' : 'Will not start at sign-in')));
 $('quit').addEventListener('click', async () => {
   if (!confirm('Quit Enter Space Light? Drives disconnect and scheduled syncs stop until it is opened again.')) return;
   await api('POST', '/api/quit');
@@ -684,6 +713,8 @@ async function backupWizard() {
     return;
   }
   const win = setup.os === 'windows';
+  const droid = setup.os === 'android';
+  const machine = droid ? 'phone' : 'computer';
   const sep = win ? '\\' : '/';
   const computer = (setup.computer || 'Computer').replace(/[\\/:*?"<>|]/g, '-');
   const w = {
@@ -756,7 +787,7 @@ async function backupWizard() {
     if (step === 0) {
       body = [h('p', { class: 'help' }, secondFor ? 'Second copy of “' + secondFor + '”.' : 'What should be protected?'),
         h('div', { class: 'choices' },
-          radio('what', 'home', w.what, 'Everything in my user folder', setup.home + ' — documents, pictures, settings and more. Caches and system files are skipped.', true, (v) => { w.what = v; }),
+          radio('what', 'home', w.what, droid ? 'All the files on this phone' : 'Everything in my user folder', droid ? 'Photos, videos, downloads and documents in shared storage. Apps’ private data isn’t included: Android doesn’t allow it.' : setup.home + ' — documents, pictures, settings and more. Caches and system files are skipped.', true, (v) => { w.what = v; }),
           radio('what', 'folders', w.what, 'Only some folders', 'Choose Documents, Pictures, or any folder.', false, (v) => { w.what = v; }),
           vols().length ? radio('what', 'drive', w.what, 'A whole drive', 'Back up another drive, such as an external disk.', false, (v) => { w.what = v; }) : null)];
       if (w.what === 'folders') {
@@ -764,7 +795,7 @@ async function backupWizard() {
           const c = h('input', { type: 'checkbox', checked: w.folders.has(f) });
           c.addEventListener('change', () => { c.checked ? w.folders.add(f) : w.folders.delete(f); });
           return h('label', { class: 'check' }, c, f.split(/[\\/]/).pop());
-        }), field('Another folder', (() => { const i = h('input', { value: w.extra, placeholder: win ? 'D:\\Projects' : '/srv/projects' }); i.addEventListener('input', () => { w.extra = i.value; }); return i; })())));
+        }), field('Another folder', (() => { const i = h('input', { value: w.extra, placeholder: win ? 'D:\\Projects' : droid ? setup.home + '/Projects' : '/srv/projects' }); i.addEventListener('input', () => { w.extra = i.value; }); return i; })())));
       }
       if (w.what === 'drive') {
         body.push(h('div', { class: 'sub-choices' }, vols().map((v) => radio('drive', v.id, w.drive, `${v.label} (${v.root})`, v.removable ? 'Removable' : 'Fixed disk', false, (x) => { w.drive = x; }))));
@@ -776,12 +807,12 @@ async function backupWizard() {
       const usbSel = h('select', {}, h('option', { value: '' }, 'Choose a drive…'), vols().filter((v) => v.id !== w.drive).map((v) => h('option', { value: v.id }, `${v.label} (${v.root})`)));
       usbSel.value = w.usb; usbSel.addEventListener('change', () => { w.usb = usbSel.value; });
       const up = h('input', { value: w.usbPath }); up.addEventListener('input', () => { w.usbPath = up.value; });
-      const fp = h('input', { value: w.folder, placeholder: win ? '\\\\nas\\backups\\' + computer : '/mnt/nas/backups/' + computer }); fp.addEventListener('input', () => { w.folder = fp.value; });
-      body = [h('p', { class: 'help' }, 'Where should the backup go? Keep at least one copy away from this computer.'),
+      const fp = h('input', { value: w.folder, placeholder: win ? '\\\\nas\\backups\\' + computer : droid ? setup.home + '/Backups' : '/mnt/nas/backups/' + computer }); fp.addEventListener('input', () => { w.folder = fp.value; });
+      body = [h('p', { class: 'help' }, 'Where should the backup go? Keep at least one copy away from this ' + machine + '.'),
         h('div', { class: 'choices' },
           setup.remotes.length ? radio('where', 'remote', w.where, 'A cloud remote', 'Runs on a schedule. Pick an encrypted (crypt) remote if you have one.', true, (v) => { w.where = v; }) : null,
           vols().length ? radio('where', 'usb', w.where, 'A USB drive', 'Runs every time this drive is plugged in.', false, (v) => { w.where = v; }) : null,
-          radio('where', 'folder', w.where, 'A folder or network share', 'Another disk or a NAS share on this computer.', false, (v) => { w.where = v; }))];
+          radio('where', 'folder', w.where, 'A folder or network share', droid ? 'Another folder on this phone. Add a remote to back up to a NAS.' : 'Another disk or a NAS share on this computer.', false, (v) => { w.where = v; }))];
       if (w.where === 'remote') body.push(h('div', { class: 'sub-choices' }, field('Remote', remoteSel), field('Folder on the remote', rp, 'Old versions are kept in .previous-versions next to it.')));
       if (w.where === 'usb') body.push(h('div', { class: 'sub-choices' }, field('Drive', usbSel, vols().length ? null : 'Plug the drive in to see it.'), field('Folder on the drive', up)));
       if (w.where === 'folder') body.push(h('div', { class: 'sub-choices' }, field('Folder', fp)));
@@ -799,13 +830,13 @@ async function backupWizard() {
       const os = h('input', { type: 'checkbox', checked: w.onStart }); os.addEventListener('change', () => { w.onStart = os.checked; });
       const days = h('select', {}, [[7, '1 week'], [30, '30 days'], [90, '90 days'], [365, '1 year'], [0, 'Forever']].map(([v, l]) => h('option', { value: v }, l))); days.value = String(w.days); days.addEventListener('change', () => { w.days = +days.value; });
       body = [usb || sourceSpec().volume ? h('p', { class: 'help' }, 'This backup runs each time the drive is plugged in.') :
-        h('div', {}, h('p', { class: 'help' }, 'When should it run? A run the computer slept through happens as soon as it wakes.'),
+        h('div', {}, h('p', { class: 'help' }, droid ? 'When should it run? Android can delay it while the phone sleeps. It waits for Wi-Fi unless you allow mobile data in Settings.' : 'When should it run? A run the computer slept through happens as soon as it wakes.'),
           h('div', { class: 'choices' },
             radio('when', 'daily', w.when, 'Every day', null, true, (v) => { w.when = v; }),
             radio('when', 'every', w.when, 'Several times a day', null, false, (v) => { w.when = v; })),
           w.when === 'daily' ? h('div', { class: 'sub-choices' }, field('At', t)) : h('div', { class: 'sub-choices' }, ev),
-          h('label', { class: 'check' }, os, 'Also run shortly after I sign in')),
-        h('p', { class: 'help' }, 'When a file is deleted from this computer:'),
+          h('label', { class: 'check' }, os, droid ? 'Also run shortly after the phone starts' : 'Also run shortly after I sign in')),
+        h('p', { class: 'help' }, 'When a file is deleted from this ' + machine + ':'),
         h('div', { class: 'choices' },
           radio('mode', 'sync', w.mode, 'Remove it from the backup too, but keep it in Time Portal', 'The backup stays the same size as your files; deleted and old versions are kept for the time below.', true, (v) => { w.mode = v; }),
           radio('mode', 'copy', w.mode, 'Keep it in the backup', 'Nothing is ever removed from the backup. It grows over time.', false, (v) => { w.mode = v; })),
@@ -820,7 +851,7 @@ async function backupWizard() {
         h('dl', { class: 'review' },
           h('dt', {}, 'Backs up'), h('dd', {}, (s.volume ? 'The drive “' + s.volume.label + '” whenever it is plugged in' : s.source) + (s.filters.length ? ' (' + s.filters.filter((f) => f.startsWith('+')).length + ' folders)' : '')),
           h('dt', {}, 'To'), h('dd', {}, d.dest.replace('{volume}', (d.volume ? d.volume.label : 'drive') + ':')),
-          h('dt', {}, 'When'), h('dd', {}, w.where === 'usb' || s.volume ? 'When the drive is plugged in' : (w.when === 'daily' ? 'Daily at ' + w.daily : 'Every ' + w.every) + (w.onStart ? ', and after sign-in' : '')),
+          h('dt', {}, 'When'), h('dd', {}, w.where === 'usb' || s.volume ? 'When the drive is plugged in' : (w.when === 'daily' ? 'Daily at ' + w.daily : 'Every ' + w.every) + (w.onStart ? (droid ? ', and after the phone starts' : ', and after sign-in') : '')),
           h('dt', {}, 'History'), h('dd', {}, historyText(w.days)),
           h('dt', {}, 'Skips'), h('dd', {}, setup.groups.filter((g) => w.groups.has(g.id)).map((g) => g.title.toLowerCase()).join(', ') || 'nothing')),
         h('label', { class: 'check' }, rn, 'Start the first backup now'),
@@ -972,7 +1003,7 @@ function restoreDialog() {
           return h('label', { class: 'choice' }, i, h('span', {}, h('b', {}, 'Put them back where they were'), h('small', {}, 'Deleted files come back. If a newer version is there now, it is kept and the old one is added beside it as “name (restored …)”.'))); })() : null,
         (() => { const i = h('input', { type: 'radio', name: 't', checked: target === 'folder' }); i.addEventListener('change', () => { target = 'folder'; render(); });
           return h('label', { class: 'choice' }, i, h('span', {}, h('b', {}, 'Into a separate folder'), h('small', {}, 'Nothing existing is touched.'))); })()),
-      target === 'folder' ? field('Folder', folder, '~ means your user folder.') : null,
+      target === 'folder' ? field('Folder', folder, isDroid() ? '~ means the phone’s shared storage.' : '~ means your user folder.') : null,
     ], [h('button', { class: 'primary', type: 'submit' }, 'Restore')]);
     form.onsubmit = async (e) => {
       e.preventDefault();
@@ -988,7 +1019,7 @@ function restoreDialog() {
 function defaultRestoreFolder() {
   const d = portalState.at, p = (n) => String(n).padStart(2, '0');
   const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}.${p(d.getMinutes())}`;
-  return (S.os === 'windows' ? '~\\' : '~/') + 'Restored from backup ' + stamp;
+  return (S.os === 'windows' ? '~\\' : '~/') + 'Restored from backup ' + stamp; // ~ is shared storage on Android
 }
 
 async function renderRestoreStatus() {

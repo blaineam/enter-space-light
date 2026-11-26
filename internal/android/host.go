@@ -4,7 +4,11 @@
 // and is tested everywhere.
 package android
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+	"time"
+)
 
 // Host is what the engine needs from the app. Every method uses only types
 // gomobile can bind.
@@ -53,6 +57,20 @@ func Current() Host {
 	mu.RLock()
 	defer mu.RUnlock()
 	return host
+}
+
+var zone atomic.Pointer[time.Location]
+
+// SetZone records the phone's time zone. Replacing time.Local while the
+// engine runs would race, so schedules read the zone through Now.
+func SetZone(loc *time.Location) { zone.Store(loc) }
+
+// Now is the current time in the phone's zone (the process zone elsewhere).
+func Now() time.Time {
+	if loc := zone.Load(); loc != nil {
+		return time.Now().In(loc)
+	}
+	return time.Now()
 }
 
 // Power is what decides whether background syncs may run now.

@@ -348,7 +348,7 @@ func (d *Daemon) portalRestoreStop(w http.ResponseWriter, _ *http.Request) {
 // expandHome turns a leading "~" into the user's home folder.
 func expandHome(p string) string {
 	if p == "~" || strings.HasPrefix(p, "~/") || strings.HasPrefix(p, `~\`) {
-		home, err := os.UserHomeDir()
+		home, err := userFolder()
 		if paths.Sandboxed() {
 			home, err = filepath.Join(paths.Home(), "home"), nil
 		}
@@ -357,4 +357,13 @@ func expandHome(p string) string {
 		}
 	}
 	return p
+}
+
+// userFolder is where "~" points in the app: the home folder, or shared
+// storage on Android (where HOME is the app's private directory).
+func userFolder() (string, error) {
+	if runtime.GOOS == "android" {
+		return androidStorage(), nil
+	}
+	return os.UserHomeDir()
 }

@@ -1,4 +1,4 @@
-// soren.config.mjs — QA suites for Enter Space Light (Windows + Linux).
+// soren.config.mjs — QA suites for Enter Space Light (Windows, Linux, Android).
 //
 // Run:  node ../../_shared/soren/soren.mjs run "Enter Space Light"
 //       node ../../_shared/soren/soren.mjs run "Enter Space Light" e2e
@@ -31,9 +31,15 @@ export default {
     'apple-compat': { type: 'cmd', cmd: './scripts/check-apple-compat.sh',
                       description: 'Manifest format vs the Apple app codec, both directions' },
     ui: { type: 'node-check', files: ['internal/ui/web/app.js'], description: 'Settings window script parses' },
+    // The app on an emulator: Files-app operations against a real network
+    // remote (checked on the server), phone backup + Time Portal + delete
+    // guard, Wi-Fi holds, time zone, and restart after reboot. Boots the
+    // esl_qa AVD and shuts it down afterwards.
+    android: { type: 'cmd', cmd: './scripts/android-qa.sh', description: 'Android app end-to-end on an emulator, plus lint',
+               tags: ['regression'] },
     // Real WinFsp drives (Windows) and FUSE mounts (Linux), from CI.
     'real-mounts': { type: 'cmd', cmd: './scripts/ci-real-mounts.sh',
                      description: 'GitHub Actions: real-mount e2e on Windows + Linux for HEAD' },
   },
-  release: { requireGreen: ['unit', 'e2e', 'cross-vet', 'apple-compat', 'ui', 'real-mounts'] },
+  release: { requireGreen: ['unit', 'e2e', 'cross-vet', 'apple-compat', 'ui', 'android', 'real-mounts'] },
 };

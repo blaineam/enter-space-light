@@ -21,6 +21,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/blaineam/enter-space-light/internal/android"
 	"github.com/blaineam/enter-space-light/internal/backup"
 	"github.com/blaineam/enter-space-light/internal/desktop"
 	"github.com/blaineam/enter-space-light/internal/jobs"
@@ -204,7 +205,7 @@ func Start(o Options) (_ *Daemon, err error) {
 			desktop.Notify("Sync failed: "+j.Name, msg)
 		},
 	})
-	d.sched = &jobs.Scheduler{Runner: d.runner, Store: store, Logf: logf, StartDelay: 45 * time.Second, VolumeCooldown: 10 * time.Minute}
+	d.sched = &jobs.Scheduler{Runner: d.runner, Store: store, Logf: logf, Now: android.Now, StartDelay: 45 * time.Second, VolumeCooldown: 10 * time.Minute}
 	d.vols = volumes.NewWatcher(nil, 3*time.Second)
 	d.sched.Hold = d.hold
 	d.applyPrefs()

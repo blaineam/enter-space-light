@@ -29,7 +29,7 @@
   </section>
   <section id="syncs" class="tab">
     <div class="head"><h1>Syncs &amp; Backups</h1><div class="row"><button id="add-sync">Add sync</button><button class="primary" id="add-backup">Set up a backup</button></div></div>
-    <p class="lede">Backups keep earlier versions of changed and deleted files so you can go back in time. Syncs copy or mirror folders. Both run on a schedule, at sign-in, or when a particular USB drive is plugged in, and retry on their own.</p>
+    <p class="lede" id="syncs-lede">Backups keep earlier versions of changed and deleted files so you can go back in time. Syncs copy or mirror folders. Both run on a schedule, at sign-in, or when a particular USB drive is plugged in, and retry on their own.</p>
     <div id="sync-list" class="list"></div>
   </section>
   <section id="portal" class="tab">
@@ -45,7 +45,9 @@
   <section id="settings" class="tab">
     <h1>Settings</h1>
     <form id="prefs" class="card form">
-      <label class="check"><input type="checkbox" id="pref-autostart"> Start Enter Space Light when I sign in</label>
+      <label class="check"><input type="checkbox" id="pref-autostart"> <span id="pref-autostart-label">Start Enter Space Light when I sign in</span></label>
+      <label class="android-only check"><input type="checkbox" id="pref-mobiledata"> Let scheduled syncs use mobile data and other metered networks</label>
+      <label class="android-only check"><input type="checkbox" id="pref-charging"> Run scheduled syncs only while charging</label>
       <label class="linux-only">Folder for automatic mount points<input id="pref-mountroot" placeholder="~/Cloud"></label>
       <label class="linux-only check"><input type="checkbox" id="pref-bookmarks"> Add drives to the file manager sidebar</label>
       <label>Cache size per drive <span class="hint">Leave empty to size it automatically from free disk space.</span><input id="pref-cache" placeholder="Automatic"></label>
@@ -53,6 +55,7 @@
       <label>Log detail<select id="pref-log"><option value="">Normal</option><option>ERROR</option><option>INFO</option><option>DEBUG</option></select></label>
       <div class="row end"><span class="saved" id="prefs-saved"></span><button class="primary" type="submit">Save</button></div>
     </form>
+    <div class="card hidden" id="permissions-card"></div>
     <div class="card" id="winfsp-card"></div>
     <div class="card" id="conf-card"></div>
     <div class="card about">
@@ -65,7 +68,7 @@
     </div>
   </section>
   <section id="log" class="tab">
-    <div class="head"><h1>Log</h1><div class="row"><button id="open-log">Open log folder</button><button id="refresh-log">Refresh</button></div></div>
+    <div class="head"><h1>Log</h1><div class="row"><button id="open-log" class="not-android">Open log folder</button><button id="refresh-log">Refresh</button></div></div>
     <pre id="log-text" class="log"></pre>
   </section>
 </main>

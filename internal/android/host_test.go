@@ -1,6 +1,19 @@
 package android
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
+
+func TestNowFollowsTheZone(t *testing.T) {
+	defer zone.Store(nil)
+	for _, offset := range []int{19800, -21600} {
+		SetZone(time.FixedZone("z", offset))
+		if _, got := Now().Zone(); got != offset {
+			t.Fatalf("offset %d, want %d", got, offset)
+		}
+	}
+}
 
 func TestHold(t *testing.T) {
 	mobile := Power{Online: true}

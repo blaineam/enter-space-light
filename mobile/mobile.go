@@ -83,6 +83,7 @@ func Start(filesDir, cacheDir, storageRoot, deviceName, timezone string) error {
 	}
 	if loc, err := time.LoadLocation(timezone); err == nil && timezone != "" {
 		time.Local = loc
+		android.SetZone(loc)
 	}
 	tmp := filepath.Join(cacheDir, "tmp")
 	if err := os.MkdirAll(tmp, 0o700); err != nil {
@@ -173,6 +174,14 @@ func LoginURL() string {
 		return ""
 	}
 	return d.LoginURL()
+}
+
+// SetTimezone follows the phone to another zone, for daily schedules.
+func SetTimezone(id string) {
+	if loc, err := time.LoadLocation(id); err == nil && id != "" {
+		android.SetZone(loc)
+		Changed()
+	}
 }
 
 // SetPower reports network and charging state.

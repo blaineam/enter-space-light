@@ -22,7 +22,8 @@ type ExcludeGroup struct {
 }
 
 // Rules are relative to the backup source root. A leading "/" anchors to
-// it; "**/" matches at any depth.
+// it; without one a rule matches at any depth, the top included. Don't write
+// "**/name": rclone then requires a folder above "name" (see the test).
 
 func windowsGroups() []ExcludeGroup {
 	return []ExcludeGroup{
@@ -31,9 +32,9 @@ func windowsGroups() []ExcludeGroup {
 			Rules: []string{
 				"- /NTUSER.DAT*", "- /ntuser.dat*", "- /ntuser.ini",
 				"- /AppData/Local/Microsoft/Windows/UsrClass.dat*",
-				"- **/$RECYCLE.BIN/**", "- **/System Volume Information/**",
+				"- $RECYCLE.BIN/**", "- System Volume Information/**",
 				"- /pagefile.sys", "- /hiberfil.sys", "- /swapfile.sys", "- /DumpStack.log*",
-				"- **/Thumbs.db", "- **/~$*", "- **/*.~tmp",
+				"- Thumbs.db", "- ~$*", "- *.~tmp",
 			}},
 		{ID: "temp", Title: "Temporary files and caches", DefaultOn: true, Recommended: true,
 			Why: "Programs recreate these; they churn constantly and make every backup slower.",
@@ -72,14 +73,14 @@ func windowsGroups() []ExcludeGroup {
 		{ID: "devjunk", Title: "Rebuildable developer folders", DefaultOn: false,
 			Why: "node_modules, build output and package caches can be downloaded again.",
 			Rules: []string{
-				"- **/node_modules/**", "- /.npm/**", "- /.nuget/packages/**", "- /.gradle/caches/**",
+				"- node_modules/**", "- /.npm/**", "- /.nuget/packages/**", "- /.gradle/caches/**",
 				"- /.cargo/registry/**", "- /go/pkg/mod/**", "- /AppData/Local/pip/cache/**",
 				"- /AppData/Local/Yarn/Cache/**",
 			}},
 		{ID: "games", Title: "Installed games", DefaultOn: false,
 			Why: "Game stores can reinstall them; they are often hundreds of gigabytes.",
 			Rules: []string{
-				"- **/steamapps/common/**", "- **/steamapps/downloading/**", "- **/Epic Games/*/**",
+				"- steamapps/common/**", "- steamapps/downloading/**", "- Epic Games/*/**",
 				"- /AppData/Local/Packages/Microsoft.GamingApp*/**",
 			}},
 	}
@@ -90,11 +91,11 @@ func linuxGroups() []ExcludeGroup {
 		{ID: "system", Title: "Trash and session files", DefaultOn: true, Recommended: true,
 			Why: "Deleted files and per-login state that is rebuilt automatically.",
 			Rules: []string{
-				"- /.local/share/Trash/**", "- **/.Trash-*/**",
+				"- /.local/share/Trash/**", "- .Trash-*/**",
 				"- /.Xauthority", "- /.ICEauthority", "- /.xsession-errors*",
 				"- /.local/share/recently-used.xbel*", "- /.local/state/wireplumber/**",
 				"- /.local/share/gvfs-metadata/**", "- /.gvfs/**", "- /.dbus/**",
-				"- **/*.swp", "- **/.~lock.*#",
+				"- *.swp", "- .~lock.*#",
 			}},
 		{ID: "temp", Title: "Caches and thumbnails", DefaultOn: true, Recommended: true,
 			Why: "Programs recreate these; they churn constantly and make every backup slower.",
@@ -119,14 +120,14 @@ func linuxGroups() []ExcludeGroup {
 		{ID: "devjunk", Title: "Rebuildable developer folders", DefaultOn: false,
 			Why: "node_modules, build output and package caches can be downloaded again.",
 			Rules: []string{
-				"- **/node_modules/**", "- /.npm/**", "- /.cargo/registry/**", "- /go/pkg/mod/**",
+				"- node_modules/**", "- /.npm/**", "- /.cargo/registry/**", "- /go/pkg/mod/**",
 				"- /.gradle/caches/**", "- /.m2/repository/**", "- /.rustup/toolchains/**",
 				"- /.local/share/containers/**", "- /.docker/**",
 			}},
 		{ID: "games", Title: "Installed games", DefaultOn: false,
 			Why: "Game stores can reinstall them; they are often hundreds of gigabytes.",
 			Rules: []string{
-				"- **/steamapps/common/**", "- **/steamapps/downloading/**", "- **/steamapps/shadercache/**",
+				"- steamapps/common/**", "- steamapps/downloading/**", "- steamapps/shadercache/**",
 				"- /.local/share/lutris/runners/**", "- /Games/**",
 			}},
 	}
@@ -141,9 +142,9 @@ func androidGroups() []ExcludeGroup {
 		{ID: "temp", Title: "Thumbnails, caches and recycle bins", DefaultOn: true, Recommended: true,
 			Why: "Rebuilt automatically, or files you already deleted.",
 			Rules: []string{
-				"- **/.thumbnails/**", "- **/.thumbdata*", "- **/.cache/**", "- **/cache/**",
-				"- **/.trashed-*", "- **/.pending-*", "- **/.Trash/**", "- **/.trash/**", "- /LOST.DIR/**",
-				"- **/*.tmp",
+				"- .thumbnails/**", "- .thumbdata*", "- .cache/**", "- cache/**",
+				"- .trashed-*", "- .pending-*", "- .Trash/**", "- .trash/**", "- /LOST.DIR/**",
+				"- *.tmp",
 			}},
 		{ID: "appmedia", Title: "Other apps' downloaded media", DefaultOn: false,
 			Why:   "Messaging and streaming apps keep large copies of media here.",

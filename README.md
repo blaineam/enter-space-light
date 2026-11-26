@@ -2,7 +2,7 @@
 
 # Enter Space Light
 
-**Your cloud storage as ordinary drives on Windows and Linux. Free and open source.**
+**Your cloud storage as ordinary drives on Windows, Linux and Android. Free and open source.**
 
 Enter Space Light mounts any [rclone](https://rclone.org) remote (Google Drive, OneDrive, Dropbox, S3, Backblaze B2, SFTP, SMB, WebDAV and about 70 more) as a normal drive. On Windows it is a drive letter in File Explorer, like a mapped network drive. On Linux it is a folder. Every application, shell and script can use it.
 
@@ -29,6 +29,18 @@ A portable `.zip` is also available. Without the installer, install WinFsp yours
 - **Anything else:** unpack the `.tar.gz` and run `./install.sh` (installs to `~/.local`, no root). You also need FUSE 3 (`fuse3` on most distros).
 
 Then start **Enter Space Light** from your app menu.
+
+### Android 8.0 and later (arm64)
+
+There's no Android release yet. When there is, it will be an `.apk` on [Releases](https://github.com/blaineam/enter-space-light/releases), installed directly instead of from Google Play (Android asks you to allow installs from your browser). To build it yourself: `scripts/build-android.sh 0.2.0 debug` (needs the Android SDK, NDK and JDK 17).
+
+Android doesn't let an app mount a filesystem, so drives work differently:
+
+- Each drive appears in the **Files** app and in other apps' open and save screens. Apps that use those get normal file access, including editing in place.
+- Apps that only open ordinary file paths, and terminal apps, can't see the drives.
+- Allow **Run without battery restrictions** in Settings so scheduled backups run on time. Some phone makers stop background apps regardless.
+- Scheduled syncs wait for Wi-Fi unless you allow mobile data.
+- **All files access** is only needed to back up or sync files on the phone or a USB drive. Android never lets apps read each other's private data, so that isn't part of a phone backup.
 
 ### Uninstall
 

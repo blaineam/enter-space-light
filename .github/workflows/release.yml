@@ -70,9 +70,49 @@ jobs:
           name: windows
           path: out/*
 
+  # A release APK must always be signed with the same key, or phones refuse
+  # the update. The key lives only in the repository's secrets.
+  android:
+    name: Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.1.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@v5.0.0
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEYSTORE_BASE64" ] || [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "::error::Set the ANDROID_KEYSTORE_BASE64 and ANDROID_KEYSTORE_PASSWORD secrets (docs/ANDROID-RELEASE.md)."
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          umask 077
+          printf 'storeFile=%s\nstorePassword=%s\nkeyAlias=esl\nkeyPassword=%s\n' \
+            "$RUNNER_TEMP/release.jks" "$KEYSTORE_PASSWORD" "$KEYSTORE_PASSWORD" > android/keystore.properties
+      - name: Build, verify the signature, name it
+        run: |
+          set -euo pipefail
+          ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" ./scripts/build-android.sh "${GITHUB_REF_NAME}" release
+          mkdir -p out
+          cp android/app/build/outputs/apk/release/app-release.apk "out/EnterSpaceLight-${GITHUB_REF_NAME#v}-android-arm64.apk"
+          "$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner" verify --print-certs out/*.apk
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: android
+          path: out/*
+
   publish:
     name: Publish release
-    needs: [linux, windows]
+    needs: [linux, windows, android]
     runs-on: ubuntu-latest
     permissions:
       contents: write

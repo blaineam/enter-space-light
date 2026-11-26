@@ -51,6 +51,25 @@ jobs:
           esl version | grep -F "0.0.0"
           test -f /usr/share/applications/enter-space-light.desktop
 
+  android:
+    name: Android app (build and lint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.1.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-java@v5.0.0
+        with:
+          distribution: temurin
+          java-version: "17"
+      # The device tests need an emulator; Soren runs those (soren.config.mjs).
+      - name: Build the engine and the APK
+        run: ANDROID_NDK_HOME="$ANDROID_NDK_LATEST_HOME" ./scripts/build-android.sh 0.0.0-ci debug
+      - name: Lint, and compile the device tests
+        working-directory: android
+        run: ./gradlew --no-daemon -q lintDebug assembleDebugAndroidTest
+
   e2e-linux:
     name: End-to-end, real FUSE mount (Linux)
     runs-on: ubuntu-latest

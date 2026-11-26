@@ -130,7 +130,7 @@ details summary { cursor: pointer; color: var(--accent); font-weight: 550; margi
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 #toast.bad { background: var(--bad); color: #fff; }
 
-.hidden, body:not(.os-linux) .linux-only, body:not(.os-windows) .win-only { display: none !important; }
+.hidden, body:not(.os-linux) .linux-only, body:not(.os-windows) .win-only, body:not(.os-android) .android-only, body.os-android .not-android { display: none !important; }
 @media (max-width: 640px) {
   .top { flex-direction: column; align-items: flex-start; gap: 6px; }
   .item { grid-template-columns: auto 1fr; }
@@ -182,3 +182,17 @@ details summary { cursor: pointer; color: var(--accent); font-weight: 550; margi
 #portal-pick { width: auto; max-width: 320px; margin-top: 0; }
 .head .row { flex-wrap: nowrap; }
 @media (max-width: 640px) { .head { flex-wrap: wrap; } .head .row { flex-wrap: wrap; } }
+
+.permission { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--line); }
+.permission:first-of-type { border-top: 0; }
+
+/* phones: bigger touch targets, and a tab strip that scrolls */
+body.os-android { font-size: 15px; }
+body.os-android .top { gap: 8px; padding: 10px 14px 8px; }
+body.os-android nav { max-width: 100%; }
+body.os-android nav button { white-space: nowrap; }
+body.os-android main { padding: 16px 14px 48px; }
+body.os-android button { min-height: 40px; }
+body.os-android input, body.os-android select { font-size: 16px; min-height: 42px; }
+body.os-android input[type=checkbox], body.os-android input[type=radio] { min-height: 0; width: 20px; height: 20px; flex: 0 0 auto; }
+.empty .row { justify-content: center; margin-top: 12px; }

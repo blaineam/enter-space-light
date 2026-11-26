@@ -4,6 +4,13 @@ All notable changes to Enter Space Light. Versions follow [Semantic Versioning](
 
 ## [Unreleased]
 
+- New: **Android** (8.0 and later, arm64), as an APK to install directly rather than from Google Play.
+  - Each drive appears in the Files app and in other apps' open and save screens. Apps read, seek, edit in place and append through real file descriptors backed by rclone's cache; changes upload in the background.
+  - A background service keeps drives available and runs schedules, starts with the phone, and keeps the processor awake only while something is transferring.
+  - Scheduled syncs wait for Wi-Fi unless you allow mobile data, can wait for the charger, and run once when allowed. Syncs you start yourself run immediately.
+  - The backup wizard and Time Portal work on the phone's shared storage and USB drives, with Android skip lists. Back up to a cloud remote, a USB drive or a folder.
+- Fixed (all platforms): skip rules written as `**/name` never matched at the top of the source, so backups included things they should have skipped there, such as `$RECYCLE.BIN` at the root of a drive, or a `node_modules` folder directly inside the backed-up folder. No files were lost. Files copied that way earlier stay in the backup; delete them there if you don't want them.
+
 ## [0.1.1] - 2026-11-25
 
 - Fixed (Windows): drives set to an automatic letter never connected on a PC with a disconnected network drive ("failed to mount FUSE fs: mount stopped before calling Init"). The disconnected drive's letter, usually Z:, looked free, so the app tried it again and again. Enter Space Light now picks the letter itself, skips every letter Windows already has (including disconnected and remembered network drives), and tries another letter if one fails.

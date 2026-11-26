@@ -68,3 +68,28 @@ Served on `127.0.0.1:<random>`. The CLI reads the address and bearer token from 
 
 - `go test -race ./...`: settings validation, tuning (including that every option name exists in rclone), mount reconcile and watchdog, runner retries, scheduler catch-up, volume diffing.
 - `go test -tags e2e -run TestE2E ./internal/daemon`: the real daemon in a sandbox, covering the API security checks, a filtered copy, a two-way sync and validation. With `ESL_E2E_MOUNT=1` (CI installs FUSE or WinFsp) it also mounts and does reads, seeks, writes and renames through the drive.
+
+## Android
+
+The same daemon, bound with gomobile (`mobile/`) inside a small Kotlin app
+(`android/`, no third-party Java code). The settings screens are the same web
+UI in a WebView, signed in with a one-time code.
+
+- **Drives:** `internal/androidfs` registers as rclone's mount implementation,
+  so `mount/mount`, tuning, health checks and remounting are unchanged. It
+  keeps the live VFS; `DrivesProvider` (a `DocumentsProvider`) serves it with
+  proxy file descriptors. Android passes append mode to those descriptors but
+  doesn't apply it, so the provider offsets appended writes itself.
+- **Host:** `internal/android.Host` is what the engine asks of the app
+  (browser, notifications, Keystore, permissions). rclone's browser sign-in
+  goes through it.
+- **Background:** a `specialUse` foreground service (Android 15 limits
+  data-sync services to six hours a day), a boot receiver, and a 15-minute
+  alarm because timers stop while the phone dozes.
+- **Holds:** the app reports network and charger state; the scheduler holds
+  due runs and owes exactly one when the reason clears.
+- **Platform traps:** `GOOS=android` also satisfies the `linux` build tag; Go
+  can't find the phone's time zone (the app passes it in); `/data/local/tmp`
+  isn't writable (`TMPDIR` is set).
+- **Tests:** `go test ./internal/androidfs ./internal/android` run anywhere;
+  `scripts/android-qa.sh` runs the app on an emulator.
