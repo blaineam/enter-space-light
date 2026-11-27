@@ -4,7 +4,10 @@ All notable changes to Enter Space Light. Versions follow [Semantic Versioning](
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-27
+
 - Fixed (Linux): Enter Space Light could freeze for good if a sync or backup used one of its own drive folders as the source or destination. Once frozen, it couldn't be closed, not even with `kill -9`. This could happen in every earlier version. It comes from how Go and the FUSE library work together, so the Linux build now uses a small patched copy of `bazil.org/fuse` (see `third_party/bazil-fuse/ENTER-SPACE-LIGHT.md`).
+- The Windows and Android apps work the same as in 0.2.0. Linux users should update.
 
 ## [0.2.0] - 2026-11-26
 
