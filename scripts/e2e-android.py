@@ -302,6 +302,10 @@ def main():
         wait(30, "the WebDAV server", lambda: urllib.request.urlopen(f"http://127.0.0.1:{port}/docs/hello.txt").status == 200)
         dav = f"http://10.0.2.2:{port}"
         say("Install")
+        # A copy signed with another key (a release build tried on this
+        # emulator) can't be installed over; remove whatever is there.
+        for pkg in (PKG + ".test", PKG):
+            dev.run("uninstall", pkg, ok=False)
         dev.run("install", "-r", "-d", app)
         dev.run("install", "-r", "-t", tests)
         dev.run("logcat", "-c")
