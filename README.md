@@ -32,7 +32,9 @@ Then start **Enter Space Light** from your app menu.
 
 ### Android 8.0 and later (arm64)
 
-There's no Android release yet. When there is, it will be an `.apk` on [Releases](https://github.com/blaineam/enter-space-light/releases), installed directly instead of from Google Play (Android asks you to allow installs from your browser). To build it yourself: `scripts/build-android.sh 0.2.0 debug` (needs the Android SDK, NDK and JDK 17).
+Download `EnterSpaceLight-<version>-android-arm64.apk` from [Releases](https://github.com/blaineam/enter-space-light/releases) on your phone and open it. It isn't on Google Play: Android asks you to allow installs from your browser or file app. To check that a download is genuine, its signing certificate's SHA-256 is `8E:B7:76:7D:97:DC:A0:FC:98:68:2B:59:30:7C:2F:76:D6:A3:3D:DF:03:F3:5B:B9:83:92:35:31:BB:58:62:E0` (`apksigner verify --print-certs`). Updates are installed the same way; the app doesn't check for them itself.
+
+The Android version is new. It has been tested on an Android 15 emulator, not yet widely on real phones.
 
 Android doesn't let an app mount a filesystem, so drives work differently:
 
@@ -44,6 +46,7 @@ Android doesn't let an app mount a filesystem, so drives work differently:
 
 ### Uninstall
 
+- **Android:** uninstall it like any app. This removes its drives, syncs and `rclone.conf`; files on your remotes aren't touched.
 - **Windows:** Settings → Apps → Installed apps → Enter Space Light → Uninstall. The portable zip: run `esl autostart off` and `esl quit`, then delete the folder. WinFsp is listed separately and can be removed the same way.
 - **Linux:** run `esl autostart off` and `esl quit`, then `sudo apt remove enter-space-light` or `sudo dnf remove enter-space-light`. For the tarball, delete `~/.local/bin/esl` and the `enter-space-light` desktop entry and icons under `~/.local/share`.
 - Your settings and `rclone.conf` are left in place; delete them by hand if you don't want them.

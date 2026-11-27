@@ -4,6 +4,8 @@ All notable changes to Enter Space Light. Versions follow [Semantic Versioning](
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-26
+
 - New: **Android** (8.0 and later, arm64), as an APK to install directly rather than from Google Play.
   - Each drive appears in the Files app and in other apps' open and save screens. Apps read, seek, edit in place and append through real file descriptors backed by rclone's cache; changes upload in the background.
   - A background service keeps drives available and runs schedules, starts with the phone, and keeps the processor awake only while something is transferring.
