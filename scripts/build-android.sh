@@ -34,6 +34,10 @@ RCLONE_VERSION="$(go list -m -f '{{.Version}}' github.com/rclone/rclone)"
 PKG=github.com/blaineam/enter-space-light
 LDFLAGS="-s -w -X $PKG/internal/version.Version=$VERSION -X $PKG/internal/version.Commit=$COMMIT -X github.com/rclone/rclone/fs.Version=$RCLONE_VERSION"
 
+# Start from empty build output. In a folder that a file-sync service watches
+# (iCloud Drive), it can gain "name 2.jar" copies that break the next build
+# with duplicate classes.
+rm -rf android/app/build
 mkdir -p android/app/libs
 # 16 KB page alignment: required by newer devices, harmless elsewhere.
 CGO_LDFLAGS="-Wl,-z,max-page-size=16384" gomobile bind \
