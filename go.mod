@@ -268,3 +268,5 @@ require (
 	storj.io/picobuf v0.0.4 // indirect
 	storj.io/uplink v1.14.5 // indirect
 )
+
+replace bazil.org/fuse => ./third_party/bazil-fuse

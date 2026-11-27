@@ -48,6 +48,7 @@ The index is always rebuilt from the destination's manifests. Which version fold
 
 - **Windows:** rclone `cmount` → cgofuse → WinFsp, with the DLL loaded at runtime (needs `-tags cmount`). Drives use network mode and the volume name `\\enterspace\<name>`. Automatic letters use rclone's `*`.
 - **Linux:** rclone `mount` (pure-Go FUSE) through `fusermount3`. The default mount folder is `~/Cloud/<name>`, added to GTK file-manager bookmarks.
+  - The daemon's own syncs may use these folders. Without care that freezes the process beyond even `kill -9`, so `internal/linuxmount` and a two-change copy of `bazil.org/fuse` stop the kernel sending POLL requests. Why: [third_party/bazil-fuse/ENTER-SPACE-LIGHT.md](../third_party/bazil-fuse/ENTER-SPACE-LIGHT.md).
 - `mounts.Manager` keeps desired state (wanted or not wanted). A reconcile pass every 5 seconds mounts what is wanted, runs health checks (rclone's mount list plus a timed directory read), and remounts after two failures with backoff. A wall-clock gap much longer than the tick means the machine slept, and triggers immediate health checks.
 
 ## Syncs
@@ -68,6 +69,7 @@ Served on `127.0.0.1:<random>`. The CLI reads the address and bearer token from 
 
 - `go test -race ./...`: settings validation, tuning (including that every option name exists in rclone), mount reconcile and watchdog, runner retries, scheduler catch-up, volume diffing.
 - `go test -tags e2e -run TestE2E ./internal/daemon`: the real daemon in a sandbox, covering the API security checks, a filtered copy, a two-way sync and validation. With `ESL_E2E_MOUNT=1` (CI installs FUSE or WinFsp) it also mounts and does reads, seeks, writes and renames through the drive.
+- `go test -tags e2e ./internal/linuxmount` (Linux with FUSE): a child process mounts a drive, limits itself to one processor and uses the drive. Without the fix it freezes every time; the test then aborts the FUSE connection.
 
 ## Android
 

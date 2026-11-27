@@ -87,6 +87,8 @@ jobs:
         env:
           ESL_E2E_MOUNT: "1"
         run: go test -tags e2e -count=1 -timeout 15m -run TestE2E -v ./internal/daemon
+      - name: A drive this process serves can be used by this process
+        run: go test -tags e2e -count=5 -timeout 5m ./internal/linuxmount
 
   e2e-windows:
     name: End-to-end, real WinFsp mount (Windows)
