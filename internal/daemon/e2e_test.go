@@ -489,6 +489,7 @@ func TestE2E(t *testing.T) {
 			if runtime.GOOS == "windows" && len(root) == 2 {
 				root += `\`
 			}
+			primePoll(t, filepath.Join(root, "backup", "a.txt"))
 			// Read through the mount what the sync job wrote.
 			b, err := os.ReadFile(filepath.Join(root, "backup", "a.txt"))
 			if err != nil || string(b) != "alpha" {

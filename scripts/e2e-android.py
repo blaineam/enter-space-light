@@ -74,7 +74,11 @@ class API:
         self.hs = None
 
     def connect(self):
-        hs = json.loads(self.dev.sh(f"run-as {PKG} cat files/state/api.json"))
+        # Missing until the engine has started; the caller waits and retries.
+        raw = self.dev.sh(f"run-as {PKG} cat files/state/api.json", ok=False)
+        if not raw.strip():
+            raise RuntimeError("the engine hasn't started yet")
+        hs = json.loads(raw)
         port = hs["url"].rsplit(":", 1)[1]
         self.dev.run("forward", "tcp:" + port, "tcp:" + port)
         self.hs = hs
